@@ -1,10 +1,10 @@
 /*
- * H.E.A.L.E.R - Arduino Mega Firmware
+ * H.E.A.L.E.R - Arduino Uno Firmware
  * ------------------------------------
  * Controls 4 medicine compartments (servos), ESP32-CAM trigger,
  * and RFID authentication for the H.E.A.L.E.R system.
  * 
- * Hardware: Arduino Mega 2560
+ * Hardware: Arduino Uno
  * Libraries: Servo, SPI, MFRC522
  */
 
@@ -15,13 +15,13 @@
 // --- Configuration ---
 const int SERVO_OPEN_ANGLE = 90;
 const int SERVO_CLOSE_ANGLE = 0;
-const int BAUD_RATE = 9600;
+const int BAUD_RATE = 9600; // Reverted for better compatibility
 
-// --- Pin Assignments ---
+// --- Pin Assignments (Uno Compatible) ---
 const int SERVO_PINS[] = {6, 7, 8, 9}; // CP 1, 2, 3, 4
-const int CAM_TRIGGER_PIN = 22;
+const int CAM_TRIGGER_PIN = 4;        
 const int RFID_RST_PIN = 5;
-const int RFID_SS_PIN = 53; // Mega SS pin
+const int RFID_SS_PIN = 10;           
 const int LED_PIN = 13;
 
 // --- Global Objects ---
@@ -88,7 +88,11 @@ void handleSerial() {
 void processCommand(String cmd) {
   cmd.trim();
   
-  if (cmd == "OPEN_1") { openServo(0); }
+  if (cmd == "PING") {
+    digitalWrite(LED_PIN, HIGH);     // Solid ON to show connection established
+    Serial.println("ARDUINO_READY"); // Respond to ping
+  }
+  else if (cmd == "OPEN_1") { openServo(0); }
   else if (cmd == "OPEN_2") { openServo(1); }
   else if (cmd == "OPEN_3") { openServo(2); }
   else if (cmd == "OPEN_4") { openServo(3); }
@@ -157,7 +161,13 @@ void checkRFID() {
   if ( ! mfrc522.PICC_ReadCardSerial()) return;
 
   // Signal detection
-  Serial.println("RFID_DETECTED");
+  Serial.print("RFID_DETECTED:");
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
+    Serial.print(mfrc522.uid.uidByte[i], HEX);
+  }
+  Serial.println();
+  
   blinkLED(2, 100);
 
   // Stop crypto on PICC

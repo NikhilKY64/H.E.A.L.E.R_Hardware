@@ -47,19 +47,22 @@ const CompartmentsTab = ({ inventory, setInventory, serialLog, setSerialLog }: a
   const [testCmd, setTestCmd] = useState('');
 
   useEffect(() => {
-    onMessage((msg) => {
+    const unsubscribe = onMessage((msg) => {
       const timestamp = new Date().toLocaleTimeString();
       setSerialLog((prev: any) => [{ timestamp, type: 'IN', msg }, ...prev].slice(0, 20));
       
-      if (msg.includes('ACK_OPEN')) {
-        const num = parseInt(msg.split('_')[2]);
-        setStatuses(prev => ({ ...prev, [num]: 'Open' }));
+      if (msg.startsWith('ACK_OPEN')) {
+        const parts = msg.split('_');
+        const num = parseInt(parts[parts.length - 1]);
+        if (!isNaN(num)) setStatuses(prev => ({ ...prev, [num]: 'Open' }));
       }
-      if (msg.includes('ACK_CLOSE')) {
-        const num = parseInt(msg.split('_')[2]);
-        setStatuses(prev => ({ ...prev, [num]: 'Closed' }));
+      if (msg.startsWith('ACK_CLOSE')) {
+        const parts = msg.split('_');
+        const num = parseInt(parts[parts.length - 1]);
+        if (!isNaN(num)) setStatuses(prev => ({ ...prev, [num]: 'Closed' }));
       }
     });
+    return () => unsubscribe();
   }, []);
 
   const handleOpen = (n: number) => {
@@ -783,6 +786,7 @@ const SettingsTab = () => {
 
 export const AdminDashboardScreen = () => {
   const navigate = useNavigate();
+  const { isHardwareConnected, connectHardware } = useAppContext();
   const [activeTab, setActiveTab] = useState<'compartments'|'inventory'|'patients'|'analytics'|'settings'>('compartments');
   const [inventory, setInventory] = useState([]);
   const [serialLog, setSerialLog] = useState<{ timestamp: string; type: 'IN' | 'OUT'; msg: string }[]>([]);
@@ -827,14 +831,29 @@ export const AdminDashboardScreen = () => {
           </div>
         </div>
         
-        <motion.button 
-          whileTap={{ scale: 0.95 }}
-          onClick={handleLogout}
-          className="h-12 px-6 bg-[rgba(255,82,82,0.1)] hover:bg-[rgba(255,82,82,0.2)] text-brand-danger border border-brand-danger/30 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
-        >
-          <LogOut size={16} />
-          Logout
-        </motion.button>
+        <div className="flex items-center gap-4">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={connectHardware}
+            className={`h-12 px-6 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-3 transition-all border ${
+              isHardwareConnected 
+                ? 'bg-[rgba(0,230,118,0.1)] text-brand-success border-brand-success/30' 
+                : 'bg-[rgba(255,179,0,0.1)] text-brand-warning border-brand-warning/30 animate-pulse'
+            }`}
+          >
+            <Activity size={18} className={isHardwareConnected ? '' : 'animate-pulse'} />
+            {isHardwareConnected ? 'Hardware Online' : 'Connect Hardware'}
+          </motion.button>
+
+          <motion.button 
+            whileTap={{ scale: 0.95 }}
+            onClick={handleLogout}
+            className="h-12 px-6 bg-[rgba(255,82,82,0.1)] hover:bg-[rgba(255,82,82,0.2)] text-brand-danger border border-brand-danger/30 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all"
+          >
+            <LogOut size={16} />
+            Logout
+          </motion.button>
+        </div>
       </div>
 
       {/* Tab Navigation */}

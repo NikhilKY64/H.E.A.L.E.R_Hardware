@@ -18,7 +18,9 @@
       "loginScan": "Or scan QR card",
       "errorPatientNotFound": "Patient not found. Please register.",
       "errorLoginFailed": "Invalid email or password.",
-      "robotIllustration": "Robot Doctor Illustration"
+      "robotIllustration": "Robot Doctor Illustration",
+      "connectHardware": "Connect Hardware",
+      "connectBtn": "Attempt Connection"
     },
     "registration": {
       "title": "New Patient Registration",
@@ -160,7 +162,9 @@
       "loginScan": "या QR कार्ड स्कैन करें",
       "errorPatientNotFound": "मरीज़ नहीं मिला। कृपया पंजीकरण करें।",
       "errorLoginFailed": "अमान्य ईमेल या पासवर्ड।",
-      "robotIllustration": "रोबोट डॉक्टर चित्रण"
+      "robotIllustration": "रोबोट डॉक्टर चित्रण",
+      "connectHardware": "हार्डवेयर कनेक्ट करें",
+      "connectBtn": "कनेक्शन का प्रयास करें"
     },
     "registration": {
       "title": "नया मरीज़ पंजीकरण",

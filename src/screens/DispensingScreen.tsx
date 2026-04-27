@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { initSerial, sendCommand, onMessage, closeSerial } from '../utils/serialComm';
 
 export const DispensingScreen = () => {
-  const { t, currentPatient } = useAppContext();
+  const { t, currentPatient, isHardwareConnected, connectHardware } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
   const params = location.state || {};
@@ -40,25 +40,35 @@ export const DispensingScreen = () => {
       return;
     }
 
+    let unsubscribe: (() => void) | null = null;
+
     const startFlow = async () => {
-      // 1. Init Serial
-      const serial = await initSerial();
-      if (!serial.success) {
-        setHardwareError(true);
+      // 1. Ensure connected
+      if (!isHardwareConnected) {
+        const res = await connectHardware();
+        if (!res) {
+          setHardwareError(true);
+          return;
+        }
       }
 
       // 2. Register listener
-      onMessage((msg) => {
+      unsubscribe = onMessage((msg) => {
         fetch('/api/logs/admin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `SERIAL ACK: ${msg}` })
+          body: JSON.stringify({ message: `DISPENSE ACK: ${msg}` })
         });
       });
 
       // 3. Send Commands
-      await sendCommand(`OPEN_${compartment_number}`);
-      await sendCommand(`CAM_ON`);
+      try {
+        await sendCommand(`OPEN_${compartment_number}`);
+        await sendCommand(`CAM_ON`);
+      } catch (err) {
+        console.error("Hardware command failed:", err);
+        setHardwareError(true);
+      }
 
       // 4. Start Timer
       timerRef.current = setInterval(() => {
@@ -77,9 +87,10 @@ export const DispensingScreen = () => {
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      closeSerial();
+      if (unsubscribe) unsubscribe();
+      // REMOVED: closeSerial(); -> Keep connection alive globally
     };
-  }, []);
+  }, [isHardwareConnected, connectHardware, compartment_number, navigate, params.compartment_number, t]);
 
   const handleComplete = async () => {
     setIsProcessing(true);

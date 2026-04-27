@@ -15,7 +15,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const LandingScreen = () => {
-  const { t, language, setLanguage, setCurrentPatient, isHardwareConnected } = useAppContext();
+  const { t, language, setLanguage, setCurrentPatient, isHardwareConnected, connectHardware } = useAppContext();
   const navigate = useNavigate();
   const [showScanner, setShowScanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -23,6 +23,7 @@ export const LandingScreen = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     let scanner: Html5QrcodeScanner | null = null;
@@ -42,6 +43,22 @@ export const LandingScreen = () => {
       if (scanner) scanner.clear().catch(err => console.error("Failed to clear scanner", err));
     };
   }, [showScanner]);
+
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    try {
+      const success = await connectHardware();
+      if (success) {
+        // We close modal if success (though ARDUINO_READY might take a second)
+        // For better UX, we can wait or show a success message
+        setTimeout(() => setShowStatusModal(false), 2000);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   const handleScan = async (scannedId: string) => {
     try {
@@ -100,7 +117,7 @@ export const LandingScreen = () => {
       {/* Top Right Hardware Status */}
       <motion.button 
         whileTap={{ scale: 0.95 }}
-        onClick={() => !isHardwareConnected && setShowStatusModal(true)}
+        onClick={() => setShowStatusModal(true)}
         className="absolute top-10 right-10 flex items-center gap-3 bg-[rgba(15,32,64,0.6)] backdrop-blur-md px-6 py-4 rounded-full border border-[rgba(33,150,243,0.2)] z-20"
       >
         <motion.div 
@@ -354,31 +371,51 @@ export const LandingScreen = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-card w-full max-w-lg p-10 text-center border-l-4 border-l-brand-danger"
+              className={`glass-card w-full max-w-lg p-10 text-center border-l-4 ${isHardwareConnected ? 'border-l-brand-success' : 'border-l-brand-danger'}`}
             >
-              <div className="w-20 h-20 bg-brand-danger/10 text-brand-danger rounded-full flex items-center justify-center mx-auto mb-6">
-                <Settings size={40} />
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${isHardwareConnected ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'}`}>
+                <Settings size={40} className={isConnecting ? 'animate-spin' : ''} />
               </div>
-              <h2 className="text-3xl font-bold mb-4">Hardware Offline</h2>
+              <h2 className="text-3xl font-bold mb-4">
+                {isHardwareConnected ? 'Hardware Ready' : 'Hardware Offline'}
+              </h2>
               <p className="text-text-secondary mb-8">
-                The application could not detect the Arduino hardware via USB.
+                {isHardwareConnected 
+                  ? 'The application is successfully communicating with the Arduino Mega.' 
+                  : 'The application could not detect the Arduino hardware via USB.'}
               </p>
-              <div className="bg-brand-card p-6 rounded-xl text-left border border-white/5 mb-8">
-                <h3 className="font-bold text-text-primary mb-3 text-sm tracking-widest uppercase">Troubleshooting:</h3>
-                <ul className="list-disc pl-5 text-text-muted space-y-2 text-sm">
-                  <li>Ensure the USB cable is securely connected.</li>
-                  <li>Check if the Arduino Mega is powered on.</li>
-                  <li>Verify browser supports Web Serial API.</li>
-                  <li>Restart the app or accept USB permissions.</li>
-                </ul>
+              
+              {!isHardwareConnected && (
+                <div className="bg-brand-card p-6 rounded-xl text-left border border-white/5 mb-8">
+                  <h3 className="font-bold text-text-primary mb-3 text-sm tracking-widest uppercase">Troubleshooting:</h3>
+                  <ul className="list-disc pl-5 text-text-muted space-y-2 text-sm">
+                    <li>Ensure the USB cable is securely connected.</li>
+                    <li>Check if the Arduino Mega is powered on.</li>
+                    <li>Verify browser supports Web Serial API.</li>
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-4">
+                {!isHardwareConnected && (
+                  <motion.button 
+                    whileTap={{ scale: 0.96 }}
+                    disabled={isConnecting}
+                    onClick={handleConnect}
+                    className="w-full py-4 bg-brand-primary text-white rounded-xl font-bold shadow-[0_4px_15px_rgba(33,150,243,0.3)] disabled:opacity-50"
+                  >
+                    {isConnecting ? 'Connecting...' : t('landing.connectBtn')}
+                  </motion.button>
+                )}
+                
+                <motion.button 
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => setShowStatusModal(false)}
+                  className="w-full py-4 bg-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.15)] text-text-primary rounded-xl font-bold transition-colors"
+                >
+                  Close
+                </motion.button>
               </div>
-              <motion.button 
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setShowStatusModal(false)}
-                className="w-full py-4 bg-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.15)] text-text-primary rounded-xl font-bold transition-colors"
-              >
-                Close
-              </motion.button>
             </motion.div>
           </motion.div>
         )}

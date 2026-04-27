@@ -16,7 +16,7 @@ import { initSerial, onMessage, closeSerial } from '../utils/serialComm';
 import { getAllSettings } from '../services/settingsService';
 
 export const AdminLoginScreen = () => {
-  const { t } = useAppContext();
+  const { t, isHardwareConnected, connectHardware } = useAppContext();
   const navigate = useNavigate();
 
   const [step, setStep] = useState<'rfid' | 'pin'>('rfid');
@@ -31,15 +31,21 @@ export const AdminLoginScreen = () => {
   const lockoutIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
     const setup = async () => {
       // Get admin pin from settings
       const settings = await getAllSettings();
       setAdminPin(settings.admin_pin || '1234');
 
-      // Init serial and listen for RFID
-      await initSerial();
-      onMessage((msg) => {
-        if (msg.trim() === 'RFID_DETECTED' && step === 'rfid') {
+      // Ensure connected
+      if (!isHardwareConnected) {
+        await connectHardware();
+      }
+
+      // Listen for RFID
+      unsubscribe = onMessage((msg) => {
+        if (msg.trim().startsWith('RFID_DETECTED') && step === 'rfid') {
           handleRfidSuccess();
         }
       });
@@ -53,9 +59,10 @@ export const AdminLoginScreen = () => {
     return () => {
       if (rfidTimeoutRef.current) clearTimeout(rfidTimeoutRef.current);
       if (lockoutIntervalRef.current) clearInterval(lockoutIntervalRef.current);
-      closeSerial();
+      if (unsubscribe) unsubscribe();
+      // REMOVED: closeSerial();
     };
-  }, []);
+  }, [isHardwareConnected, connectHardware, step]);
 
   const startRfidTimeout = () => {
     if (rfidTimeoutRef.current) clearTimeout(rfidTimeoutRef.current);

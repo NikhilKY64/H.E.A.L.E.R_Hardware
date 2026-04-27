@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import locales from '../locales.json';
+import { initSerial, onMessage } from '../utils/serialComm';
 
 type Language = 'en' | 'hi';
 
@@ -15,6 +16,7 @@ interface AppContextType {
   setCurrentPatient: (patient: Patient | null) => void;
   setCurrentSession: (session: Session | null) => void;
   setIsHardwareConnected: (connected: boolean) => void;
+  connectHardware: () => Promise<boolean>;
   t: (path: string) => string;
 }
 
@@ -25,6 +27,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [language, setLanguage] = useState<Language>('en');
   const [isHardwareConnected, setIsHardwareConnected] = useState<boolean>(false);
+
+  // Auto-reconnect on mount
+  useEffect(() => {
+    const attemptAutoConnect = async () => {
+      const res = await initSerial(true);
+      if (res.success) {
+        onMessage((msg) => {
+          if (msg.trim() === 'ARDUINO_READY') {
+            setIsHardwareConnected(true);
+          }
+        });
+      }
+    };
+    attemptAutoConnect();
+  }, []);
+
+  const connectHardware = async () => {
+    const res = await initSerial(false);
+    if (res.success) {
+      onMessage((msg) => {
+        if (msg.trim() === 'ARDUINO_READY') {
+          setIsHardwareConnected(true);
+        }
+      });
+      return true;
+    }
+    return false;
+  };
 
   // Simple translation helper t('landing.title')
   const t = (path: string): string => {
@@ -49,6 +79,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setCurrentPatient,
       setCurrentSession,
       setIsHardwareConnected,
+      connectHardware,
       t
     }}>
       {children}

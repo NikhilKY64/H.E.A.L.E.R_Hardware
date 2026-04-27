@@ -42,32 +42,9 @@ const MainLayout = () => {
     // Ping backend to check if DB is initialized
     fetch('/api/health')
       .then(res => res.json())
-      .then(async data => {
+      .then(data => {
         if (data.status === 'ok') {
-          await initSerial();
-          
-          let connected = false;
-          const timeoutId = setTimeout(() => {
-            if (!connected) {
-               setIsHardwareConnected(false);
-               setDbReady(true);
-            }
-          }, 3000);
-
-          onMessage((msg) => {
-            if (msg.trim() === 'ARDUINO_READY') {
-              connected = true;
-              setIsHardwareConnected(true);
-              clearTimeout(timeoutId);
-              setDbReady(true);
-              
-              fetch('/api/logs/admin', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: `Hardware connected on startup [${new Date().toISOString()}]` })
-              }).catch(() => {});
-            }
-          });
+          setDbReady(true);
         }
       })
       .catch(err => console.error("Backend not ready yet", err));
