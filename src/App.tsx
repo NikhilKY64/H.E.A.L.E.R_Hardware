@@ -40,14 +40,28 @@ const MainLayout = () => {
 
   useEffect(() => {
     // Ping backend to check if DB is initialized
-    fetch('/api/health')
+    // On Vercel, this will likely fail, so we'll timeout and load in "Demo Mode"
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.warn("Backend connection timed out. Starting in Demo/Offline Mode.");
+      setDbReady(true);
+    }, 3000);
+
+    fetch('/api/health', { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
+        clearTimeout(timeoutId);
         if (data.status === 'ok') {
           setDbReady(true);
         }
       })
-      .catch(err => console.error("Backend not ready yet", err));
+      .catch(err => {
+        console.error("Backend not ready yet or unavailable", err);
+        // On Vercel, we still want to show the UI
+        if (err.name === 'AbortError') return;
+        setDbReady(true); 
+      });
   }, []);
 
   if (!dbReady) {
