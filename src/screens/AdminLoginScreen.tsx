@@ -215,13 +215,13 @@ export const AdminLoginScreen = () => {
                 </motion.button>
               )}
 
-              {/* Simulation Helper */}
-              {process.env.NODE_ENV === 'development' && rfidStatus === 'pending' && (
+              {/* Simulation Helper - Enabled for Vercel Testing */}
+              {rfidStatus === 'pending' && (
                 <button 
                   onClick={handleRfidSuccess}
-                  className="mt-8 text-white/20 text-xs uppercase tracking-widest font-bold hover:text-white transition-colors"
+                  className="mt-8 text-white/30 text-[10px] uppercase tracking-widest font-bold hover:text-brand-secondary transition-colors"
                 >
-                  [ Simulate RFID Tap ]
+                  [ TEST MODE: Simulate RFID Tap ]
                 </button>
               )}
             </motion.div>
