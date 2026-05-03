@@ -9,13 +9,25 @@ import {
   X,
   Smartphone,
   ChevronRight,
-  Activity
+  Activity,
+  Usb
 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { motion, AnimatePresence } from 'motion/react';
+import { loginPatient, loginPatientByQR, getPatientFullHistory } from '../services/dbService';
+import { 
+  getHardwareConfig, 
+  initHardware, 
+  requestWebSerialPort, 
+  requestBluetoothDevice, 
+  closeHardware,
+  sendCommand
+} from '../utils/serialComm';
+import { getSetting } from '../services/dbService';
 
 export const LandingScreen = () => {
-  const { t, language, setLanguage, setCurrentPatient, isHardwareConnected, connectHardware } = useAppContext();
+  const { t, language, setLanguage, setCurrentPatient, hwStatus, hwMode } = useAppContext();
+  const isHardwareConnected = hwStatus === 'connected';
   const navigate = useNavigate();
   const [showScanner, setShowScanner] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -23,7 +35,6 @@ export const LandingScreen = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
 
   const handleFirstAid = () => {
     navigate('/dispensing', { state: { isFirstAid: true } });
@@ -48,35 +59,19 @@ export const LandingScreen = () => {
     };
   }, [showScanner]);
 
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    try {
-      const success = await connectHardware();
-      if (success) {
-        // We close modal if success (though ARDUINO_READY might take a second)
-        // For better UX, we can wait or show a success message
-        setTimeout(() => setShowStatusModal(false), 2000);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
   const handleScan = async (scannedId: string) => {
     try {
-      const response = await fetch(`/api/admin/patients/${scannedId.replace('HEALER_PATIENT_', '')}/full`);
-      if (response.ok) {
-        const patient = await response.json();
-        setCurrentPatient(patient);
+      const patient = await loginPatientByQR(scannedId);
+      if (patient && patient.id) {
+        const fullPatient = await getPatientFullHistory(patient.id);
+        setCurrentPatient(fullPatient);
         navigate('/dashboard');
       } else {
         setErrorMessage(t('landing.errorPatientNotFound'));
         setTimeout(() => setErrorMessage(''), 5000);
       }
     } catch (err) {
-      setErrorMessage("Error connecting to server.");
+      setErrorMessage("Error connecting to database.");
     }
   };
 
@@ -85,27 +80,28 @@ export const LandingScreen = () => {
     setIsLoggingIn(true);
     setErrorMessage('');
     try {
-      const response = await fetch('/api/patients/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginForm)
-      });
-      if (response.ok) {
-        const patient = await response.json();
-        const fullRes = await fetch(`/api/admin/patients/${patient.id}/full`);
-        if (fullRes.ok) {
-          const fullPatient = await fullRes.json();
-          setCurrentPatient(fullPatient);
-          navigate('/dashboard');
-        }
+      const patient = await loginPatient(loginForm.email, loginForm.password);
+      if (patient && patient.id) {
+        const fullPatient = await getPatientFullHistory(patient.id);
+        setCurrentPatient(fullPatient);
+        navigate('/dashboard');
       } else {
         setErrorMessage(t('landing.errorLoginFailed'));
       }
     } catch (err) {
-      setErrorMessage("Connection error.");
+      setErrorMessage("Database error.");
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleAdminAccess = async () => {
+    // Check if RFID is enabled
+    const rfidSetting = await getSetting('rfid_enabled');
+    if (rfidSetting !== 'false') {
+      sendCommand('REBOOT');
+    }
+    navigate('/admin');
   };
 
   return (
@@ -122,15 +118,25 @@ export const LandingScreen = () => {
       <motion.button 
         whileTap={{ scale: 0.95 }}
         onClick={() => setShowStatusModal(true)}
-        className="absolute top-10 right-10 flex items-center gap-3 bg-[rgba(15,32,64,0.6)] backdrop-blur-md px-6 py-4 rounded-full border border-[rgba(33,150,243,0.2)] z-20"
+        className={`absolute top-10 right-10 flex items-center gap-3 bg-[rgba(15,32,64,0.6)] backdrop-blur-md px-6 py-4 rounded-full border z-20 transition-colors ${
+          hwStatus === 'connected' ? 'border-[rgba(33,150,243,0.2)] hover:bg-[rgba(15,32,64,0.8)]' : 
+          hwStatus === 'connecting' ? 'border-[rgba(255,179,0,0.2)] hover:bg-[rgba(15,32,64,0.8)]' :
+          'border-[rgba(255,82,82,0.2)] hover:bg-[rgba(255,82,82,0.1)]'
+        }`}
       >
         <motion.div 
-          animate={isHardwareConnected ? { opacity: [1, 0.3, 1] } : {}}
+          animate={hwStatus === 'connected' ? { opacity: [1, 0.3, 1] } : {}}
           transition={{ repeat: Infinity, duration: 2 }}
-          className={`w-3 h-3 rounded-full ${isHardwareConnected ? 'bg-brand-success shadow-[0_0_12px_var(--color-brand-success)]' : 'bg-brand-danger shadow-[0_0_12px_var(--color-brand-danger)] animate-pulse'}`} 
+          className={`w-3 h-3 rounded-full ${
+            hwStatus === 'connected' ? 'bg-brand-success shadow-[0_0_12px_var(--color-brand-success)]' : 
+            hwStatus === 'connecting' ? 'bg-brand-warning shadow-[0_0_12px_var(--color-brand-warning)] animate-pulse' :
+            'bg-brand-danger shadow-[0_0_12px_var(--color-brand-danger)] animate-pulse'
+          }`} 
         />
-        <span className="text-sm font-bold uppercase tracking-[1.5px] text-text-secondary">
-          {isHardwareConnected ? 'Hardware Ready' : 'Hardware Offline'}
+        <span className="text-sm font-bold uppercase tracking-[1.5px] text-text-secondary whitespace-nowrap">
+          {hwStatus === 'connected' ? `Hardware Ready (${hwMode})` : 
+           hwStatus === 'connecting' ? 'Connecting...' : 
+           'Hardware Offline'}
         </span>
       </motion.button>
 
@@ -238,10 +244,10 @@ export const LandingScreen = () => {
             <ChevronRight className="text-text-muted group-hover:text-brand-danger transition-colors" />
           </motion.button>
 
-          {/* Button 3: Admin Access */}
+          {/* Button 4: Admin Access */}
           <motion.button
             whileTap={{ scale: 0.96 }}
-            onClick={() => navigate('/admin')}
+            onClick={handleAdminAccess}
             className="w-full glass-card border-l-4 border-l-text-muted p-6 flex items-center justify-between group hover:bg-[rgba(255,255,255,0.05)] transition-colors mt-4 opacity-70 hover:opacity-100"
           >
             <div className="flex items-center gap-6">
@@ -390,51 +396,84 @@ export const LandingScreen = () => {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`glass-card w-full max-w-lg p-10 text-center border-l-4 ${isHardwareConnected ? 'border-l-brand-success' : 'border-l-brand-danger'}`}
+              className={`glass-card w-full max-w-lg p-10 relative border-l-4 ${isHardwareConnected ? 'border-l-brand-success' : 'border-l-brand-danger'}`}
             >
-              <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${isHardwareConnected ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'}`}>
-                <Settings size={40} className={isConnecting ? 'animate-spin' : ''} />
-              </div>
-              <h2 className="text-3xl font-bold mb-4">
-                {isHardwareConnected ? 'Hardware Ready' : 'Hardware Offline'}
-              </h2>
-              <p className="text-text-secondary mb-8">
-                {isHardwareConnected 
-                  ? 'The application is successfully communicating with the Arduino Mega.' 
-                  : 'The application could not detect the Arduino hardware via USB.'}
-              </p>
+              <button 
+                onClick={() => setShowStatusModal(false)}
+                className="absolute top-6 right-6 w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
+              >
+                <X size={20} />
+              </button>
               
-              {!isHardwareConnected && (
-                <div className="bg-brand-card p-6 rounded-xl text-left border border-white/5 mb-8">
-                  <h3 className="font-bold text-text-primary mb-3 text-sm tracking-widest uppercase">Troubleshooting:</h3>
-                  <ul className="list-disc pl-5 text-text-muted space-y-2 text-sm">
-                    <li>Ensure the USB cable is securely connected.</li>
-                    <li>Check if the Arduino Mega is powered on.</li>
-                    <li>Verify browser supports Web Serial API.</li>
-                  </ul>
+              <div className="flex items-center gap-4 mb-6">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isHardwareConnected ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'}`}>
+                  <Settings size={32} />
                 </div>
-              )}
-
-              <div className="flex flex-col gap-4">
-                {!isHardwareConnected && (
-                  <motion.button 
-                    whileTap={{ scale: 0.96 }}
-                    disabled={isConnecting}
-                    onClick={handleConnect}
-                    className="w-full py-4 bg-brand-primary text-white rounded-xl font-bold shadow-[0_4px_15px_rgba(33,150,243,0.3)] disabled:opacity-50"
-                  >
-                    {isConnecting ? 'Connecting...' : t('landing.connectBtn')}
-                  </motion.button>
-                )}
-                
-                <motion.button 
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => setShowStatusModal(false)}
-                  className="w-full py-4 bg-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.15)] text-text-primary rounded-xl font-bold transition-colors"
-                >
-                  Close
-                </motion.button>
+                <div>
+                  <h2 className="text-2xl font-bold">Hardware Connection</h2>
+                  <p className={isHardwareConnected ? "text-brand-success" : "text-brand-danger"}>
+                    {isHardwareConnected ? 'Connected & Ready' : 'Offline / Disconnected'}
+                  </p>
+                </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-6 mb-8 mt-10">
+                {/* USB Column */}
+                <div className="flex flex-col items-center gap-4 p-6 glass-card border-white/5 relative overflow-hidden">
+                   <Usb size={40} className={hwStatus === 'connected' && hwMode === 'usb' ? 'text-brand-danger animate-pulse' : 'text-brand-primary'} />
+                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">USB Interface</span>
+                   <button 
+                     onClick={async () => {
+                       if (hwStatus === 'connected' && hwMode === 'usb') {
+                         await closeHardware();
+                       } else {
+                         const res = await requestWebSerialPort();
+                         if(!res.success) alert("Error: " + res.error);
+                       }
+                     }}
+                     className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-300 ${
+                       hwStatus === 'connected' && hwMode === 'usb' 
+                       ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md' 
+                       : 'bg-brand-primary text-white shadow-[0_4px_12px_rgba(33,150,243,0.3)]'
+                     } ${hwStatus === 'connected' && hwMode !== 'usb' ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
+                     disabled={hwStatus === 'connected' && hwMode !== 'usb'}
+                   >
+                     {hwStatus === 'connected' && hwMode === 'usb' ? 'Disconnect' : 'Connect'}
+                   </button>
+                </div>
+
+                {/* Bluetooth Column */}
+                <div className="flex flex-col items-center gap-4 p-6 glass-card border-white/5 relative overflow-hidden">
+                   <Activity size={40} className={hwStatus === 'connected' && hwMode === 'bluetooth' ? 'text-brand-danger animate-pulse' : 'text-brand-secondary'} />
+                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">BT Interface</span>
+                   <button 
+                     onClick={async () => {
+                       if (hwStatus === 'connected' && hwMode === 'bluetooth') {
+                         await closeHardware();
+                       } else {
+                         const res = await requestBluetoothDevice();
+                         if(!res.success) alert("Error: " + res.error);
+                       }
+                     }}
+                     className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-300 ${
+                       hwStatus === 'connected' && hwMode === 'bluetooth' 
+                       ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md' 
+                       : 'bg-brand-secondary text-brand-navy shadow-[0_4px_12px_rgba(0,188,212,0.3)]'
+                     } ${hwStatus === 'connected' && hwMode !== 'bluetooth' ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
+                     disabled={hwStatus === 'connected' && hwMode !== 'bluetooth'}
+                   >
+                     {hwStatus === 'connected' && hwMode === 'bluetooth' ? 'Disconnect' : 'Connect'}
+                   </button>
+                </div>
+              </div>
+
+              <motion.button 
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setShowStatusModal(false)}
+                className="w-full py-4 bg-white/5 hover:bg-white/10 text-text-secondary rounded-xl font-bold uppercase tracking-widest text-xs transition-colors"
+              >
+                Close Status Panel
+              </motion.button>
             </motion.div>
           </motion.div>
         )}

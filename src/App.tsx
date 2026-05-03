@@ -15,8 +15,7 @@ import { Loader2 } from 'lucide-react';
 import { initSerial, onMessage } from './utils/serialComm';
 
 const MainLayout = () => {
-  const [dbReady, setDbReady] = useState(false);
-  const { t, setCurrentPatient, setCurrentSession, setIsHardwareConnected } = useAppContext();
+  const { setCurrentPatient, setCurrentSession } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -38,41 +37,6 @@ const MainLayout = () => {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [location.pathname, navigate, setCurrentPatient, setCurrentSession]);
 
-  useEffect(() => {
-    // Ping backend to check if DB is initialized
-    // On Vercel, this will likely fail, so we'll timeout and load in "Demo Mode"
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.warn("Backend connection timed out. Starting in Demo/Offline Mode.");
-      setDbReady(true);
-    }, 3000);
-
-    fetch('/api/health', { signal: controller.signal })
-      .then(res => res.json())
-      .then(data => {
-        clearTimeout(timeoutId);
-        if (data.status === 'ok') {
-          setDbReady(true);
-        }
-      })
-      .catch(err => {
-        console.error("Backend not ready yet or unavailable", err);
-        // On Vercel, we still want to show the UI
-        if (err.name === 'AbortError') return;
-        setDbReady(true); 
-      });
-  }, []);
-
-  if (!dbReady) {
-    return (
-      <div className="w-screen h-screen flex flex-col items-center justify-center bg-blue-600 text-white select-none overflow-hidden font-sans">
-        <Loader2 className="w-24 h-24 mb-8 animate-spin" />
-        <h1 className="text-6xl font-bold tracking-tight">H.E.A.L.E.R</h1>
-        <p className="text-2xl mt-4 opacity-80">{t('loading')}</p>
-      </div>
-    );
-  }
 
   return (
     <div className="w-screen h-screen overflow-auto bg-white text-gray-900 select-none font-sans relative">

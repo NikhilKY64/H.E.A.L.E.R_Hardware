@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { QUESTION_TREE, calculateDiagnosis, getNextQuestion } from '../utils/diagnosisEngine';
 import { getAgeGroup } from '../utils/ageUtils';
+import { createSession, createPrescription, getDiseaseMap } from '../services/dbService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Stethoscope, 
@@ -21,7 +22,7 @@ export const DiagnosisScreen = () => {
   const { t, language, currentPatient, setCurrentSession } = useAppContext();
   const navigate = useNavigate();
 
-  const [currentQuestionId, setCurrentQuestionId] = useState<string>('Q0');
+  const [currentQuestionId, setCurrentQuestionId] = useState<string>('Q1');
   const [sessionAnswers, setSessionAnswers] = useState<any[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [diseaseScores, setDiseaseScores] = useState<Record<string, number>>({});
@@ -54,6 +55,7 @@ export const DiagnosisScreen = () => {
   }, [isAnalyzing]);
 
   const handleOptionToggle = (idx: number) => {
+    if (!currentQuestion) return;
     if (currentQuestion.type === 'multiple_select') {
       if (selectedOptions.includes(idx)) {
         setSelectedOptions(selectedOptions.filter(i => i !== idx));
@@ -70,11 +72,12 @@ export const DiagnosisScreen = () => {
   };
 
   const processAnswer = (indices: number[]) => {
+    if (!currentQuestion) return;
     const newScores = { ...diseaseScores };
     indices.forEach(idx => {
-      const opt = currentQuestion.options[idx];
-      Object.entries(opt.symptom_weights).forEach(([disease, weight]) => {
-        newScores[disease] = (newScores[disease] || 0) + weight;
+      const opt = currentQuestion.options[idx] as any;
+      Object.entries(opt.symptom_weights || {}).forEach(([disease, weight]) => {
+        newScores[disease] = (newScores[disease] || 0) + (weight as number);
       });
     });
 
@@ -82,7 +85,7 @@ export const DiagnosisScreen = () => {
       question_id: currentQuestionId,
       question_text: language === 'en' ? currentQuestion.text_en : currentQuestion.text_hi,
       selected_option: currentQuestion.type === 'multiple_select' ? indices : indices[0],
-      weights_added: indices.map(idx => currentQuestion.options[idx].symptom_weights)
+      weights_added: indices.map(idx => (currentQuestion.options[idx] as any).symptom_weights || {})
     };
 
     const newSessionAnswers = [...sessionAnswers, newAnswer];
@@ -132,26 +135,20 @@ export const DiagnosisScreen = () => {
 
     setTimeout(async () => {
       try {
-        const mapResponse = await fetch(`/api/disease-map/${results.diagnosis}`);
-        const diseaseMap = await mapResponse.json();
+        const diseaseMap = await getDiseaseMap(results.diagnosis);
 
         const sessionPayload = {
-          patient_id: currentPatient.id,
+          patient_id: currentPatient.id!,
           timestamp: new Date().toISOString(),
           diagnosed_disease: results.diagnosis,
           confidence_score: results.confidence,
-          top_alternatives: results.top3,
+          top_alternatives: "",
           ai_used: aiResult ? 1 : 0,
-          ai_result: aiResult ? JSON.stringify(aiResult) : null,
+          ai_result: aiResult ? JSON.stringify(aiResult) : "",
           action_taken: results.action
         };
 
-        const sessionRes = await fetch('/api/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sessionPayload)
-        });
-        const { id: sessionId } = await sessionRes.json();
+        const sessionId = await createSession(sessionPayload);
 
         // Always try to create a prescription entry if we have medicine info or just generic advice
         const medicineName = diseaseMap?.medicine_name || "General Care / Consult Doctor";
@@ -159,17 +156,13 @@ export const DiagnosisScreen = () => {
                        ageGroup === 'adult' ? diseaseMap.dosage_adult : 
                        diseaseMap.dosage_elderly) : "As recommended by physician";
 
-        await fetch('/api/prescriptions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: sessionId,
-            medicine_name: medicineName,
-            dosage: dosage || "Consult pharmacist",
-            frequency: diseaseMap?.is_serious ? "URGENT" : "As instructed", 
-            duration: diseaseMap?.is_serious ? "Immediate" : "5 days",
-            compartment_number: diseaseMap?.compartment_number || 0
-          })
+        await createPrescription({
+          session_id: sessionId,
+          medicine_name: medicineName,
+          dosage: dosage || "Consult pharmacist",
+          frequency: diseaseMap?.is_serious ? "URGENT" : "As instructed", 
+          duration: diseaseMap?.is_serious ? "Immediate" : "5 days",
+          compartment_number: diseaseMap?.compartment_number ?? null
         });
 
         setCurrentSession({ id: sessionId, ...sessionPayload });
@@ -358,7 +351,7 @@ export const DiagnosisScreen = () => {
             </div>
 
             <h2 className="text-4xl font-bold text-text-primary mb-6 leading-tight">
-              {language === 'en' ? currentQuestion.text_en : currentQuestion.text_hi}
+              {language === 'en' ? currentQuestion?.text_en : currentQuestion?.text_hi}
             </h2>
 
             <div className="flex items-center gap-2 mb-10 text-text-muted italic text-sm">
@@ -375,7 +368,7 @@ export const DiagnosisScreen = () => {
                {t('diagnosis.crossRef')}
             </div>
 
-            {currentQuestion.camera_trigger && !aiResult && (
+            {currentQuestion?.camera_trigger && !aiResult && (
                <motion.button 
                  whileTap={{ scale: 0.98 }}
                  onClick={startCamera}
@@ -400,7 +393,7 @@ export const DiagnosisScreen = () => {
             )}
 
              <div className="grid grid-cols-1 gap-4 mt-auto">
-               {currentQuestion.options.map((option, idx) => {
+               {currentQuestion?.options?.map((option, idx) => {
                  const isSelected = selectedOptions.includes(idx);
                  
                  return (
@@ -438,7 +431,7 @@ export const DiagnosisScreen = () => {
                  {t('common.back') || 'Back'}
                </motion.button>
 
-               {(currentQuestion.type === 'multiple_select' || currentQuestion.type === 'multiple_choice') && (
+               {(currentQuestion?.type === 'multiple_select' || currentQuestion?.type === 'multiple_choice') && (
                  <motion.button 
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}

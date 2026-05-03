@@ -11,10 +11,11 @@ import {
   Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { initSerial, sendCommand, onMessage, closeSerial } from '../utils/serialComm';
+import { initHardware, sendCommand, onMessage, closeHardware } from '../utils/serialComm';
+import { dispense, addAdminLog } from '../services/dbService';
 
 export const DispensingScreen = () => {
-  const { t, currentPatient, isHardwareConnected, connectHardware } = useAppContext();
+  const { t, currentPatient, hwStatus, hwMode } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
   const params = location.state || {};
@@ -24,7 +25,7 @@ export const DispensingScreen = () => {
     medicine_name, 
     quantity_dispensed, 
     session_id,
-    isFirstAid 
+    isFirstAid
   } = params;
 
   const [timeLeft, setTimeLeft] = useState(10);
@@ -34,52 +35,53 @@ export const DispensingScreen = () => {
   const [dbError, setDbError] = useState('');
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasStarted = useRef(false);
 
   useEffect(() => {
-    if (!isFirstAid && !params.compartment_number) {
-      navigate('/prescription');
+    if (!params.compartment_number && !params.isFirstAid) {
+      navigate('/landing');
       return;
     }
 
-    let unsubscribe: (() => void) | null = null;
+    if (hasStarted.current) return;
+    hasStarted.current = true;
 
+    let unlistenFn: (() => void) | undefined;
     const startFlow = async () => {
-      // 1. Ensure connected
-      if (!isHardwareConnected) {
-        const res = await connectHardware();
-        if (!res) {
-          setHardwareError(true);
-          return;
-        }
+      console.log("Dispensing: startFlow initiated");
+      // 1. Check Hardware Connection
+      if (hwStatus !== 'connected') {
+        setHardwareError(true);
+        // Dispatching a mock error log
+        addAdminLog(`ERROR: Dispensing attempted while hardware is ${hwStatus}`).catch(() => {});
+        return;
       }
 
+      // Check if still mounted after async init
+      if (timerRef.current === undefined) return; 
+
       // 2. Register listener
-      unsubscribe = onMessage((msg) => {
-        fetch('/api/logs/admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `DISPENSE ACK: ${msg}` })
-        });
+      unlistenFn = onMessage((msg) => {
+        addAdminLog(`SERIAL ACK: ${msg}`).catch(() => {});
       });
 
       // 3. Send Commands
-      try {
-        if (isFirstAid) {
-          await sendCommand(`OPEN_FA`);
-        } else {
-          await sendCommand(`OPEN_${compartment_number}`);
-        }
-        await sendCommand(`CAM_ON`);
-      } catch (err) {
-        console.error("Hardware command failed:", err);
-        setHardwareError(true);
+      if (isFirstAid) {
+        await sendCommand(`OPEN_FA`);
+      } else {
+        await sendCommand(`OPEN_${compartment_number}`);
       }
+      await sendCommand(`CAM_ON`);
+
+      // Check if still mounted after commands
+      if (timerRef.current === undefined) return;
 
       // 4. Start Timer
+      if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev <= 1) {
-            clearInterval(timerRef.current!);
+            if (timerRef.current) clearInterval(timerRef.current);
             handleComplete();
             return 0;
           }
@@ -91,12 +93,16 @@ export const DispensingScreen = () => {
     startFlow();
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (unsubscribe) unsubscribe();
+      if (unlistenFn) unlistenFn();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = undefined; // Mark as unmounted
+      }
     };
-  }, [isHardwareConnected, connectHardware, compartment_number, navigate, params.compartment_number, isFirstAid]);
+  }, []);
 
   const handleComplete = async () => {
+    console.log("Dispensing: handleComplete triggered");
     setIsProcessing(true);
     
     // 5. Send Stop Commands
@@ -108,6 +114,7 @@ export const DispensingScreen = () => {
     await sendCommand(`CAM_OFF`);
 
     if (isFirstAid) {
+      addAdminLog("Instant First Aid Dispensed").catch(() => {});
       setIsCompleted(true);
       setIsProcessing(false);
       return;
@@ -115,42 +122,51 @@ export const DispensingScreen = () => {
 
     try {
       // 6. DB Updates & Logging
-      const response = await fetch('/api/dispense', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          compartment_number,
-          quantity_dispensed,
-          session_id,
-          medicine_name,
-          patient_id: currentPatient?.id,
-          patient_name: currentPatient?.name
-        })
-      });
-
-      if (response.ok) {
-        setIsCompleted(true);
-      } else {
-        const errorData = await response.json();
-        setDbError(errorData.error || t('dispensing.stockError'));
-      }
-    } catch (err) {
+      await dispense(
+        session_id,
+        currentPatient?.id!,
+        medicine_name,
+        compartment_number,
+        quantity_dispensed
+      );
+      setIsCompleted(true);
+    } catch (err: any) {
       console.error(err);
-      setDbError(t('dispensing.stockError'));
+      setDbError(err.message || t('dispensing.stockError'));
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // Auto-navigate after success
+  useEffect(() => {
+    if (isCompleted && !dbError) {
+      const timeout = setTimeout(() => {
+        navigate(isFirstAid ? '/' : '/prescription');
+      }, 3000); // 3 seconds is perfect for reading the success message
+      return () => clearTimeout(timeout);
+    }
+  }, [isCompleted, dbError, navigate, isFirstAid]);
+
+  const handleCancel = async () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setIsProcessing(true);
+    
+    if (isFirstAid) {
+      await sendCommand(`CLOSE_FA`);
+    } else {
+      await sendCommand(`CLOSE_${compartment_number}`);
+    }
+    await sendCommand(`CAM_OFF`);
+
+    setIsProcessing(false);
+    navigate(isFirstAid ? '/' : '/prescription');
   };
 
   const addTime = () => {
     if(!isCompleted && !isProcessing) {
        setTimeLeft((prev) => prev + 10);
     }
-  };
-
-  const handleCancel = () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    handleComplete();
   };
 
   return (
@@ -162,7 +178,7 @@ export const DispensingScreen = () => {
       <motion.div 
         animate={{ opacity: [0.3, 0.6, 0.3] }}
         transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-        className={`absolute inset-0 blur-[150px] pointer-events-none transition-colors duration-1000 ${isCompleted ? 'bg-[radial-gradient(ellipse_at_center,_var(--color-brand-success)_0%,_transparent_60%)]' : isFirstAid ? 'bg-[radial-gradient(ellipse_at_center,_var(--color-brand-danger)_0%,_transparent_60%)]' : 'bg-[radial-gradient(ellipse_at_center,_var(--color-brand-primary)_0%,_transparent_60%)]'}`} 
+        className={`absolute inset-0 blur-[150px] pointer-events-none transition-colors duration-1000 ${isCompleted ? 'bg-[radial-gradient(ellipse_at_center,_var(--color-brand-success)_0%,_transparent_60%)]' : 'bg-[radial-gradient(ellipse_at_center,_var(--color-brand-primary)_0%,_transparent_60%)]'}`} 
       />
 
       {hardwareError && (
@@ -186,10 +202,10 @@ export const DispensingScreen = () => {
               exit={{ opacity: 0, scale: 1.05 }}
               className="flex flex-col items-center text-center w-full"
             >
-              <h2 className={`text-4xl font-bold mb-2 tracking-wide ${isFirstAid ? 'text-brand-danger' : 'text-text-primary'}`}>
+              <h2 className="text-4xl font-bold text-text-primary mb-2 tracking-wide">
                 {isFirstAid ? t('dispensing.firstAidKit') : t('dispensing.dispensing').replace('{{medicine}}', medicine_name)}
               </h2>
-              <p className={`text-xl font-bold mb-16 uppercase tracking-[0.2em] ${isFirstAid ? 'text-brand-danger/80' : 'text-brand-secondary/80'}`}>
+              <p className="text-xl text-brand-secondary/80 font-bold mb-16 uppercase tracking-[0.2em]">
                 {isFirstAid ? t('dispensing.emergencyAccess') : t('dispensing.subtitle').replace('{{n}}', compartment_number)}
               </p>
 
@@ -198,8 +214,8 @@ export const DispensingScreen = () => {
                 <svg className="absolute w-full h-full rotate-[-90deg]">
                   <defs>
                     <linearGradient id="timerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor={isFirstAid ? "var(--color-brand-danger)" : "var(--color-brand-secondary)"} />
-                      <stop offset="100%" stopColor={isFirstAid ? "#FF5252" : "var(--color-brand-primary)"} />
+                      <stop offset="0%" stopColor="var(--color-brand-secondary)" />
+                      <stop offset="100%" stopColor="var(--color-brand-primary)" />
                     </linearGradient>
                   </defs>
                   <circle 
@@ -208,16 +224,16 @@ export const DispensingScreen = () => {
                   <motion.circle 
                     cx="160" cy="160" r="140" fill="none" stroke="url(#timerGrad)" strokeWidth="12" strokeLinecap="round"
                     strokeDasharray={880}
-                    animate={{ strokeDashoffset: 880 - (timeLeft / Math.max(10, timeLeft)) * 880 }}
+                    animate={{ strokeDashoffset: 880 - (timeLeft / 20) * 880 }}
                     transition={{ ease: "linear", duration: 1 }}
-                    className={`drop-shadow-[0_0_15px_${isFirstAid ? 'rgba(255,82,82,0.5)' : 'rgba(33,150,243,0.5)'}]`}
+                    className="drop-shadow-[0_0_15px_rgba(33,150,243,0.5)]"
                   />
                 </svg>
                 <div className="flex flex-col items-center z-10">
                   <span className="text-[80px] font-mono font-bold text-white leading-none drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
                     {timeLeft}
                   </span>
-                  <span className={`text-sm font-bold uppercase tracking-[0.2em] mt-2 glow ${isFirstAid ? 'text-brand-danger' : 'text-brand-secondary'}`}>
+                  <span className="text-sm font-bold text-brand-secondary uppercase tracking-[0.2em] mt-2 glow">
                     Seconds
                   </span>
                 </div>
@@ -227,36 +243,37 @@ export const DispensingScreen = () => {
                 {isFirstAid 
                   ? t('dispensing.collectFirstAid')
                   : t('dispensing.collectInstructions')
-                      .replace('{{q}}', quantity_dispensed)
-                      .replace('{{m}}', medicine_name)}
+                  .replace('{{q}}', quantity_dispensed)
+                  .replace('{{m}}', medicine_name)}
               </p>
 
-              <div className="flex gap-6">
+              <div className="flex flex-row gap-6 items-center justify-center w-full max-w-lg">
                 <motion.button 
                   whileTap={{ scale: 0.95 }}
                   onClick={addTime}
                   disabled={isProcessing}
-                  className={`h-16 px-8 rounded-full flex items-center gap-4 transition-all border-2 ${isFirstAid ? 'border-brand-danger text-brand-danger hover:bg-[rgba(255,82,82,0.1)] hover:shadow-[0_0_20px_rgba(255,82,82,0.3)]' : 'border-brand-secondary text-brand-secondary hover:bg-[rgba(0,188,212,0.1)] hover:shadow-[0_0_20px_rgba(0,188,212,0.3)]'} disabled:opacity-50`}
+                  className="flex-1 h-16 px-6 rounded-2xl flex items-center justify-center gap-3 transition-all border-2 border-brand-secondary text-brand-secondary hover:bg-[rgba(0,188,212,0.1)] hover:shadow-[0_0_20px_rgba(0,188,212,0.3)] disabled:opacity-50 whitespace-nowrap"
                 >
-                  <Plus size={24} />
-                  <span className="text-sm font-bold uppercase tracking-widest">+10 Seconds</span>
+                  <Plus size={20} />
+                  <span className="text-[13px] font-black uppercase tracking-widest">+10 SECONDS</span>
                 </motion.button>
 
-                {isFirstAid && (
-                  <motion.button 
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleCancel}
-                    disabled={isProcessing}
-                    className="h-16 px-8 rounded-full flex items-center gap-4 transition-all bg-brand-danger text-white shadow-[0_4px_15px_rgba(255,82,82,0.3)] disabled:opacity-50"
-                  >
-                    <AlertTriangle size={24} />
-                    <span className="text-sm font-bold uppercase tracking-widest">{t('dispensing.cancel')}</span>
-                  </motion.button>
-                )}
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleComplete}
+                  disabled={isProcessing}
+                  className="flex-1 h-16 rounded-2xl bg-brand-danger/10 border border-brand-danger/30 text-brand-danger flex items-center justify-center gap-3 shadow-[0_0_25px_rgba(255,82,82,0.1)] hover:bg-brand-danger/20 transition-all disabled:opacity-50"
+                >
+                  <Clock size={20} className="animate-pulse" />
+                  <span className="font-black uppercase tracking-widest text-sm">
+                    {isProcessing ? 'Wait...' : 'CLOSE'}
+                  </span>
+                </motion.button>
               </div>
               
               {isProcessing && (
-                <div className={`mt-8 flex items-center gap-3 font-bold text-sm tracking-widest uppercase glow ${isFirstAid ? 'text-brand-danger' : 'text-brand-primary'}`}>
+                <div className="mt-8 flex items-center gap-3 text-brand-primary font-bold text-sm tracking-widest uppercase glow">
                   <Loader2 className="animate-spin" size={20} />
                   Processing...
                 </div>
@@ -275,10 +292,10 @@ export const DispensingScreen = () => {
               <h2 className="text-3xl font-bold text-text-primary mb-12">{dbError}</h2>
               <motion.button 
                 whileTap={{ scale: 0.96 }}
-                onClick={() => navigate('/prescription')}
+                onClick={() => navigate(isFirstAid ? '/' : '/prescription')}
                 className="h-16 px-10 bg-brand-primary text-white rounded-full text-sm font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(33,150,243,0.4)]"
               >
-                {t('dispensing.backToPrescription')}
+                {isFirstAid ? t('landing.home') : t('dispensing.backToPrescription')}
               </motion.button>
             </motion.div>
           ) : (
@@ -306,16 +323,20 @@ export const DispensingScreen = () => {
               </div>
 
               <h2 className="text-4xl font-bold text-text-primary mb-4 glow-success">{t('dispensing.success')}</h2>
-              <p className="text-xl text-text-secondary font-medium mb-16 tracking-wide">{t('dispensing.closed')}</p>
+              <p className="text-xl text-text-secondary font-medium mb-8 tracking-wide">{t('dispensing.closed')}</p>
               
-              <motion.button 
-                whileTap={{ scale: 0.96 }}
-                onClick={() => navigate(isFirstAid ? '/' : '/prescription')}
-                className="h-16 px-10 bg-brand-primary hover:bg-[#1E88E5] text-white rounded-full text-sm font-bold tracking-widest uppercase shadow-[0_0_20px_rgba(33,150,243,0.5)] flex items-center gap-3 transition-colors"
-              >
-                <ArrowLeft size={20} strokeWidth={3} />
-                {isFirstAid ? t('landing.home') : t('dispensing.backToPrescription')}
-              </motion.button>
+              <div className="flex flex-col items-center gap-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-success/60 animate-pulse">
+                  Redirecting automatically...
+                </div>
+                <motion.button 
+                  whileTap={{ scale: 0.96 }}
+                  onClick={() => navigate(isFirstAid ? '/' : '/prescription')}
+                  className="h-14 px-10 border border-white/10 hover:bg-white/5 text-text-secondary rounded-full text-[10px] font-bold tracking-widest uppercase transition-colors"
+                >
+                  {isFirstAid ? t('landing.home') : t('dispensing.backToPrescription')}
+                </motion.button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

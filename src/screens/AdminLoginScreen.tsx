@@ -12,11 +12,11 @@ import {
   CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { initSerial, onMessage, closeSerial } from '../utils/serialComm';
-import { getAllSettings } from '../services/settingsService';
+import { onMessage, closeHardware } from '../utils/serialComm';
+import { getSetting, addAdminLog } from '../services/dbService';
 
 export const AdminLoginScreen = () => {
-  const { t, isHardwareConnected, connectHardware } = useAppContext();
+  const { t } = useAppContext();
   const navigate = useNavigate();
 
   const [step, setStep] = useState<'rfid' | 'pin'>('rfid');
@@ -31,38 +31,40 @@ export const AdminLoginScreen = () => {
   const lockoutIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-
     const setup = async () => {
       // Get admin pin from settings
-      const settings = await getAllSettings();
-      setAdminPin(settings.admin_pin || '1234');
+      const pinSetting = await getSetting('admin_pin');
+      setAdminPin(pinSetting || '1234');
 
-      // Ensure connected
-      if (!isHardwareConnected) {
-        await connectHardware();
+      // Check if RFID is enabled
+      const rfidSetting = await getSetting('rfid_enabled');
+      if (rfidSetting === 'false') {
+        setStep('pin');
+        return;
       }
 
-      // Listen for RFID
-      unsubscribe = onMessage((msg) => {
-        if (msg.trim().startsWith('RFID_DETECTED') && step === 'rfid') {
+      // Init serial and listen for RFID
+      const unlisten = onMessage((msg) => {
+        if (msg.trim() === 'RFID_DETECTED' && step === 'rfid') {
           handleRfidSuccess();
         }
       });
 
       // Start RFID timeout
       startRfidTimeout();
+
+      return unlisten;
     };
 
-    setup();
+    let unlistenFn: (() => void) | undefined;
+    setup().then(fn => { unlistenFn = fn; });
 
     return () => {
       if (rfidTimeoutRef.current) clearTimeout(rfidTimeoutRef.current);
       if (lockoutIntervalRef.current) clearInterval(lockoutIntervalRef.current);
-      if (unsubscribe) unsubscribe();
-      // REMOVED: closeSerial();
+      if (unlistenFn) unlistenFn();
     };
-  }, [isHardwareConnected, connectHardware, step]);
+  }, [step]);
 
   const startRfidTimeout = () => {
     if (rfidTimeoutRef.current) clearTimeout(rfidTimeoutRef.current);
@@ -98,11 +100,7 @@ export const AdminLoginScreen = () => {
   const handleConfirm = async () => {
     if (pin === adminPin) {
       // Log success
-      await fetch('/api/logs/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `Admin login successful [${new Date().toISOString()}]` })
-      });
+      await addAdminLog(`Admin login successful [${new Date().toISOString()}]`);
       navigate('/admin/dashboard');
     } else {
       const newAttempts = attempts + 1;
@@ -215,13 +213,13 @@ export const AdminLoginScreen = () => {
                 </motion.button>
               )}
 
-              {/* Simulation Helper - Enabled for Vercel Testing */}
-              {rfidStatus === 'pending' && (
+              {/* Simulation Helper */}
+              {process.env.NODE_ENV === 'development' && rfidStatus === 'pending' && (
                 <button 
                   onClick={handleRfidSuccess}
-                  className="mt-8 text-white/30 text-[10px] uppercase tracking-widest font-bold hover:text-brand-secondary transition-colors"
+                  className="mt-8 text-white/20 text-xs uppercase tracking-widest font-bold hover:text-white transition-colors"
                 >
-                  [ TEST MODE: Simulate RFID Tap ]
+                  [ Simulate RFID Tap ]
                 </button>
               )}
             </motion.div>
