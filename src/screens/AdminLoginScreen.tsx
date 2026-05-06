@@ -26,6 +26,7 @@ export const AdminLoginScreen = () => {
   const [attempts, setAttempts] = useState(0);
   const [lockoutSecs, setLockoutSecs] = useState(0);
   const [adminPin, setAdminPin] = useState('');
+  const [secretTapCount, setSecretTapCount] = useState(0);
 
   const rfidTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lockoutIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -155,7 +156,10 @@ export const AdminLoginScreen = () => {
 
       <div className="w-full max-w-xl glass-card border border-white/10 p-16 shadow-[0_40px_100px_rgba(0,0,0,0.6)] z-10 flex flex-col items-center text-center">
         
-        <div className="w-20 h-20 bg-brand-primary/10 text-brand-secondary border border-brand-secondary/30 rounded-full flex items-center justify-center mb-8 shadow-[0_0_20px_rgba(0,188,212,0.3)]">
+        <div 
+          onClick={() => setSecretTapCount(prev => prev + 1)}
+          className="w-20 h-20 bg-brand-primary/10 text-brand-secondary border border-brand-secondary/30 rounded-full flex items-center justify-center mb-8 shadow-[0_0_20px_rgba(0,188,212,0.3)] cursor-default active:scale-95 transition-transform"
+        >
           <Shield size={36} />
         </div>
 
@@ -213,15 +217,20 @@ export const AdminLoginScreen = () => {
                 </motion.button>
               )}
 
-              {/* Simulation Helper */}
-              {process.env.NODE_ENV === 'development' && rfidStatus === 'pending' && (
-                <button 
-                  onClick={handleRfidSuccess}
-                  className="mt-8 text-white/20 text-xs uppercase tracking-widest font-bold hover:text-white transition-colors"
-                >
-                  [ Simulate RFID Tap ]
-                </button>
-              )}
+              {/* Simulation Helper (Hidden Backdoor) */}
+              <AnimatePresence>
+                {secretTapCount >= 5 && rfidStatus === 'pending' && (
+                  <motion.button 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    onClick={handleRfidSuccess}
+                    className="mt-8 text-white/40 text-[10px] uppercase tracking-widest font-black hover:text-brand-secondary transition-all"
+                  >
+                    [ Simulate RFID Tap ]
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </motion.div>
           ) : (
             <motion.div 

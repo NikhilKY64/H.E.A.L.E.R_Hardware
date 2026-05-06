@@ -40,12 +40,11 @@ void setup() {
   Serial1.begin(BAUD_RATE); // For ESP32-CAM (Pins 18/19)
   inputString.reserve(50);
 
-  // 2. Initialize Servos (Pin Grounding for Smart Detach)
+  // 2. Initialize Servos (No attach here, we use Smart Detach)
   for (int i = 0; i < 5; i++) {
-    pinMode(SERVO_PINS[i], OUTPUT);
-    digitalWrite(SERVO_PINS[i], LOW); // Keep signal at 0V to prevent startup twitching
+    // servos[i].attach(SERVO_PINS[i]); // Removed for Smart Detach
+    // servos[i].write(SERVO_CLOSE_ANGLE);
   }
-  delay(1000); // Wait for power to stabilize
 
   // 3. Initialize CAM Trigger
   pinMode(CAM_TRIGGER_PIN, OUTPUT);
@@ -135,7 +134,7 @@ void processCommand(String cmd) {
     for (int i = 0; i < 5; i++) {
       servos[i].attach(SERVO_PINS[i]);
       servos[i].write(SERVO_OPEN_ANGLE);
-      delay(500); // Wait for movement to finish
+      delay(60); // Fast open due to gravity
       servos[i].detach();
     }
     sendResponse("ACK_OPEN_ALL");
@@ -144,7 +143,7 @@ void processCommand(String cmd) {
     for (int i = 0; i < 5; i++) {
       servos[i].attach(SERVO_PINS[i]);
       servos[i].write(SERVO_CLOSE_ANGLE);
-      delay(500); // Wait for movement to finish
+      delay(60); // Slower close to fight gravity
       servos[i].detach();
     }
     sendResponse("ACK_CLOSE_ALL");

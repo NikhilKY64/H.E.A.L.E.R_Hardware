@@ -16,10 +16,24 @@ let keepReading = true;
 let _connType: ConnectionType = 'none';
 let _status: HardwareStatus = 'disconnected';
 
-// BLE UUIDs (Must match ESP32)
+// BLE UUIDs (Must match ESP32) - Standardized to lowercase
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+// --- Global Hardware Disconnect Listener (USB) ---
+if ('serial' in navigator) {
+  (navigator as any).serial.addEventListener('disconnect', (event: any) => {
+    if (event.target === port) {
+      console.warn('USB Hardware disconnected unexpectedly');
+      updateStatus('disconnected');
+      port = null;
+      writer = null;
+      reader = null;
+      _connType = 'none';
+    }
+  });
+}
 
 /**
  * Initialize Hardware Connection (Auto-reconnect for USB)
@@ -62,6 +76,21 @@ async function initWebSerial() {
 
 async function initWebBluetooth() {
   if (!('bluetooth' in navigator)) return { success: false, error: 'Not supported' };
+  
+  // 1. Try to find an existing device we've already authorized
+  if (!bleDevice && (navigator.bluetooth as any).getDevices) {
+    try {
+      const devices = await (navigator.bluetooth as any).getDevices();
+      const healer = devices.find((d: any) => d.name === 'HEALER-ROBOT');
+      if (healer) {
+        bleDevice = healer;
+        console.log('Auto-connecting to known robot...');
+      }
+    } catch (err) {
+      console.warn('Auto-connect lookup failed:', err);
+    }
+  }
+
   if (!bleDevice) {
     updateStatus('disconnected');
     return { success: false, error: 'NEEDS_USER_GESTURE' };
@@ -73,9 +102,27 @@ async function initWebBluetooth() {
     
     const txChar = await service?.getCharacteristic(TX_UUID);
     await txChar?.startNotifications();
+    let bleBuffer = "";
     txChar?.addEventListener('characteristicvaluechanged', (event: any) => {
-      const value = new TextDecoder().decode(event.target.value).trim();
-      if (value) dispatchMessage(value);
+      const chunk = new TextDecoder().decode(event.target.value);
+      bleBuffer += chunk;
+      
+      let nl = bleBuffer.indexOf('\n');
+      while (nl >= 0) {
+        const msg = bleBuffer.slice(0, nl).trim();
+        bleBuffer = bleBuffer.slice(nl + 1);
+        if (msg) dispatchMessage(msg);
+        nl = bleBuffer.indexOf('\n');
+      }
+    });
+
+    bleDevice.addEventListener('gattserverdisconnected', () => {
+      console.warn('Bluetooth disconnected unexpectedly. Starting auto-healing...');
+      updateStatus('disconnected');
+      bleCharacteristic = null;
+      if (_connType === 'bluetooth') {
+        attemptAutoReconnect();
+      }
     });
 
     updateStatus('connected');
@@ -87,9 +134,18 @@ async function initWebBluetooth() {
 }
 
 export async function requestBluetoothDevice() {
+  if (!('bluetooth' in navigator)) {
+    return { 
+      success: false, 
+      error: 'Bluetooth requires a secure connection (HTTPS) or is not supported on this device.' 
+    };
+  }
   try {
     bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ name: 'HEALER-ROBOT' }],
+      filters: [
+        { name: 'HEALER-ROBOT' },
+        { services: [SERVICE_UUID] }
+      ],
       optionalServices: [SERVICE_UUID]
     });
     _connType = 'bluetooth'; // Update mode here
@@ -100,6 +156,12 @@ export async function requestBluetoothDevice() {
 }
 
 export async function requestWebSerialPort() {
+  if (!('serial' in navigator)) {
+    return { 
+      success: false, 
+      error: 'USB Serial requires a secure connection (HTTPS) or a desktop browser (Chrome/Edge).' 
+    };
+  }
   try {
     port = await (navigator as any).serial.requestPort();
     _connType = 'usb'; // Update mode here
@@ -183,6 +245,7 @@ function updateStatus(status: HardwareStatus, error?: string) {
 function dispatchMessage(msg: string) {
   const cleanMsg = msg.trim();
   if (cleanMsg) {
+    console.log(`[HARDWARE]: ${cleanMsg}`);
     window.dispatchEvent(new CustomEvent('hardware-message', { detail: cleanMsg }));
   }
 }
@@ -200,10 +263,40 @@ export const onMessage = (callback: (msg: string) => void) => {
   return () => window.removeEventListener('hardware-message', handler);
 };
 
-export const getConnectionStatus = () => _status;
 export const getHardwareConfig = () => ({ type: _connType });
+export const getConnectionStatus = () => _status;
+
+// --- Auto-Healing Logic ---
+let reconnectInterval: NodeJS.Timeout | null = null;
+
+async function attemptAutoReconnect() {
+  if (reconnectInterval) return;
+  
+  console.log('🔄 Auto-Healing: Searching for robot...');
+  
+  reconnectInterval = setInterval(async () => {
+    if (_status === 'connected' || _connType !== 'bluetooth') {
+      if (reconnectInterval) clearInterval(reconnectInterval);
+      reconnectInterval = null;
+      return;
+    }
+
+    console.log('🔄 Auto-Healing: Attempting to re-establish link...');
+    const res = await initWebBluetooth();
+    if (res.success) {
+      console.log('✅ Auto-Healing: Robot recovered!');
+      if (reconnectInterval) clearInterval(reconnectInterval);
+      reconnectInterval = null;
+    }
+  }, 5000); // Try every 5 seconds
+}
 
 export const closeHardware = async () => {
+  if (reconnectInterval) {
+    clearInterval(reconnectInterval);
+    reconnectInterval = null;
+  }
+  
   keepReading = false;
   
   if (writer) {

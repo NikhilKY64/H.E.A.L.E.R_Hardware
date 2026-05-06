@@ -18,12 +18,11 @@ import { loginPatient, loginPatientByQR, getPatientFullHistory } from '../servic
 import { 
   getHardwareConfig, 
   initHardware, 
-  requestWebSerialPort, 
-  requestBluetoothDevice, 
   closeHardware,
   sendCommand
 } from '../utils/serialComm';
 import { getSetting } from '../services/dbService';
+import { HardwareModal } from '../components/HardwareModal';
 
 export const LandingScreen = () => {
   const { t, language, setLanguage, setCurrentPatient, hwStatus, hwMode } = useAppContext();
@@ -111,6 +110,8 @@ export const LandingScreen = () => {
       exit={{ opacity: 0, y: -20 }}
       className="w-full h-full flex overflow-y-auto relative font-sans text-text-primary scrollbar-thin scrollbar-thumb-brand-primary"
     >
+      {/* Pro Hardware Connection Modal */}
+      <HardwareModal isOpen={showStatusModal} onClose={() => setShowStatusModal(false)} />
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--color-brand-card)_0%,_transparent_50%)] pointer-events-none opacity-50" />
       
@@ -378,102 +379,6 @@ export const LandingScreen = () => {
                   Hold your QR code card steadily in front of the camera
                 </p>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Hardware Status Modal */}
-      <AnimatePresence>
-        {showStatusModal && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-brand-navy/90 backdrop-blur-xl z-[100] flex items-center justify-center p-12"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className={`glass-card w-full max-w-lg p-10 relative border-l-4 ${isHardwareConnected ? 'border-l-brand-success' : 'border-l-brand-danger'}`}
-            >
-              <button 
-                onClick={() => setShowStatusModal(false)}
-                className="absolute top-6 right-6 w-10 h-10 bg-white/5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors"
-              >
-                <X size={20} />
-              </button>
-              
-              <div className="flex items-center gap-4 mb-6">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isHardwareConnected ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'}`}>
-                  <Settings size={32} />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">Hardware Connection</h2>
-                  <p className={isHardwareConnected ? "text-brand-success" : "text-brand-danger"}>
-                    {isHardwareConnected ? 'Connected & Ready' : 'Offline / Disconnected'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6 mb-8 mt-10">
-                {/* USB Column */}
-                <div className="flex flex-col items-center gap-4 p-6 glass-card border-white/5 relative overflow-hidden">
-                   <Usb size={40} className={hwStatus === 'connected' && hwMode === 'usb' ? 'text-brand-danger animate-pulse' : 'text-brand-primary'} />
-                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">USB Interface</span>
-                   <button 
-                     onClick={async () => {
-                       if (hwStatus === 'connected' && hwMode === 'usb') {
-                         await closeHardware();
-                       } else {
-                         const res = await requestWebSerialPort();
-                         if(!res.success) alert("Error: " + res.error);
-                       }
-                     }}
-                     className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-300 ${
-                       hwStatus === 'connected' && hwMode === 'usb' 
-                       ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md' 
-                       : 'bg-brand-primary text-white shadow-[0_4px_12px_rgba(33,150,243,0.3)]'
-                     } ${hwStatus === 'connected' && hwMode !== 'usb' ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
-                     disabled={hwStatus === 'connected' && hwMode !== 'usb'}
-                   >
-                     {hwStatus === 'connected' && hwMode === 'usb' ? 'Disconnect' : 'Connect'}
-                   </button>
-                </div>
-
-                {/* Bluetooth Column */}
-                <div className="flex flex-col items-center gap-4 p-6 glass-card border-white/5 relative overflow-hidden">
-                   <Activity size={40} className={hwStatus === 'connected' && hwMode === 'bluetooth' ? 'text-brand-danger animate-pulse' : 'text-brand-secondary'} />
-                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">BT Interface</span>
-                   <button 
-                     onClick={async () => {
-                       if (hwStatus === 'connected' && hwMode === 'bluetooth') {
-                         await closeHardware();
-                       } else {
-                         const res = await requestBluetoothDevice();
-                         if(!res.success) alert("Error: " + res.error);
-                       }
-                     }}
-                     className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-300 ${
-                       hwStatus === 'connected' && hwMode === 'bluetooth' 
-                       ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md' 
-                       : 'bg-brand-secondary text-brand-navy shadow-[0_4px_12px_rgba(0,188,212,0.3)]'
-                     } ${hwStatus === 'connected' && hwMode !== 'bluetooth' ? 'opacity-20 grayscale cursor-not-allowed' : ''}`}
-                     disabled={hwStatus === 'connected' && hwMode !== 'bluetooth'}
-                   >
-                     {hwStatus === 'connected' && hwMode === 'bluetooth' ? 'Disconnect' : 'Connect'}
-                   </button>
-                </div>
-              </div>
-
-              <motion.button 
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setShowStatusModal(false)}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 text-text-secondary rounded-xl font-bold uppercase tracking-widest text-xs transition-colors"
-              >
-                Close Status Panel
-              </motion.button>
             </motion.div>
           </motion.div>
         )}

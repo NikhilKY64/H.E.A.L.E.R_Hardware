@@ -55,140 +55,7 @@ import { sendQRCodeEmail } from '../services/emailService';
 import QRCode from 'qrcode';
 import { db } from '../lib/db';
 import { useLiveQuery } from 'dexie-react-hooks';
-
-// --- Hardware Connection Modal ---
-const HardwareModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
-  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>(getConnectionStatus() === 'connected' ? 'connected' : 'idle');
-  const [activeType, setActiveType] = useState<'usb' | 'bluetooth' | null>(getConnectionStatus() === 'connected' ? getHardwareConfig().type as any : null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    const unlisten = onConnectionStatus((newStatus, error) => {
-      setStatus(newStatus as any);
-      if (newStatus === 'connected') {
-        setActiveType(getHardwareConfig().type as any);
-      } else if (newStatus === 'idle') {
-        setActiveType(null);
-      }
-      
-      if (newStatus === 'error') {
-        setErrorMsg(error || 'Connection failed');
-      }
-    });
-    return () => unlisten();
-  }, []);
-
-  const handleUSBConnect = async () => {
-    setStatus('connecting');
-    const res = await requestWebSerialPort();
-    if (!res.success) {
-      setStatus('error');
-      setErrorMsg(res.error || 'Failed to select port');
-    }
-  };
-
-  const handleBluetoothConnect = async () => {
-    setStatus('connecting');
-    const res = await requestBluetoothDevice();
-    if (!res.success) {
-      setStatus('error');
-      setErrorMsg(res.error || 'Bluetooth selection failed');
-    }
-  };
-
-  const handleDisconnect = async () => {
-    await closeHardware();
-    setStatus('idle');
-    setActiveType(null);
-  };
-
-  if (!isOpen) return null;
-
-  const isUsbActive = status === 'connected' && activeType === 'usb';
-  const isBtActive = status === 'connected' && activeType === 'bluetooth';
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-brand-navy/90 backdrop-blur-md">
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg glass-card p-10 flex flex-col gap-8 relative overflow-hidden shadow-[0_0_50px_rgba(0,188,212,0.2)]">
-        <div className="flex justify-between items-center">
-          <div className="flex flex-col gap-1">
-            <h3 className="text-2xl font-black text-white uppercase tracking-tight">Hardware Control</h3>
-            <p className="text-text-secondary text-sm font-medium">Manage Robot communication Link</p>
-          </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">
-            <X size={20} className="text-text-muted" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-6">
-          {/* USB Column */}
-          <div className="flex flex-col items-center gap-5 p-8 glass-card border-white/5 relative overflow-hidden">
-            <Usb size={48} className={isUsbActive ? 'text-brand-danger animate-pulse' : 'text-brand-primary'} />
-            <div className="flex flex-col items-center gap-1">
-              <span className="font-black text-white uppercase tracking-tighter text-lg">Serial Port</span>
-              <span className="text-[9px] font-bold text-text-muted uppercase tracking-[0.2em]">Wired Connection</span>
-            </div>
-            <button 
-              onClick={isUsbActive ? handleDisconnect : handleUSBConnect} 
-              disabled={status === 'connecting' || (status === 'connected' && !isUsbActive)} 
-              className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-500 ${isUsbActive ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md shadow-[0_0_20px_rgba(255,82,82,0.2)]' : 'bg-brand-primary text-white shadow-[0_8px_20px_rgba(33,150,243,0.3)]'} ${(status === 'connected' && !isUsbActive) ? 'opacity-10 grayscale cursor-not-allowed' : ''}`}
-            >
-              {isUsbActive ? 'Disconnect' : 'Connect'}
-            </button>
-          </div>
-
-          {/* Bluetooth Column */}
-          <div className="flex flex-col items-center gap-5 p-8 glass-card border-white/5 relative overflow-hidden">
-            <Activity size={48} className={isBtActive ? 'text-brand-danger animate-pulse' : 'text-brand-secondary'} />
-            <div className="flex flex-col items-center gap-1">
-              <span className="font-black text-white uppercase tracking-tighter text-lg">HEALER BT</span>
-              <span className="text-[9px] font-bold text-text-muted uppercase tracking-[0.2em]">Wireless Link</span>
-            </div>
-            <button 
-              onClick={isBtActive ? handleDisconnect : handleBluetoothConnect} 
-              disabled={status === 'connecting' || (status === 'connected' && !isBtActive)} 
-              className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all duration-500 ${isBtActive ? 'bg-brand-danger/20 text-brand-danger border border-brand-danger/50 backdrop-blur-md shadow-[0_0_20px_rgba(255,82,82,0.2)]' : 'bg-brand-secondary text-brand-navy shadow-[0_8px_20px_rgba(0,188,212,0.3)]'} ${(status === 'connected' && !isBtActive) ? 'opacity-10 grayscale cursor-not-allowed' : ''}`}
-            >
-              {isBtActive ? 'Disconnect' : 'Connect'}
-            </button>
-          </div>
-        </div>
-
-        {status === 'connecting' && (
-          <div className="flex items-center justify-center gap-3 py-4 text-brand-secondary">
-            <Loader2 className="animate-spin" size={24} />
-            <span className="font-bold uppercase tracking-widest text-xs animate-pulse">Processing...</span>
-          </div>
-        )}
-
-        {status === 'connected' && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-center gap-3 py-4 text-brand-success bg-brand-success/10 rounded-xl border border-brand-success/30">
-              <CheckCircle2 size={24} />
-              <span className="font-bold uppercase tracking-widest text-xs">Active Connection</span>
-            </div>
-            <button onClick={onClose} className="w-full py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold uppercase tracking-widest text-xs transition-colors">
-              Continue to Dashboard
-            </button>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div className="flex flex-col gap-2 p-4 bg-brand-danger/10 border border-brand-danger/30 rounded-xl">
-            <div className="flex items-center gap-2 text-brand-danger">
-              <AlertCircle size={20} />
-              <span className="font-bold uppercase tracking-widest text-xs">System Error</span>
-            </div>
-            <p className="text-brand-danger/80 text-[10px] uppercase font-bold leading-tight">{errorMsg}</p>
-            <button onClick={() => setStatus('idle')} className="mt-2 text-white/40 hover:text-white text-[10px] uppercase font-bold tracking-widest">Clear & Retry</button>
-          </div>
-        )}
-      </motion.div>
-    </div>
-  );
-};
-
-// --- Tab Sub-Components ---
+import { HardwareModal } from '../components/HardwareModal';
 
 const CompartmentsTab = ({ inventory, setInventory, serialLog, setSerialLog }: any) => {
   const { t } = useAppContext();
@@ -1009,14 +876,14 @@ const SettingsTab = () => {
                 onClick={() => setFormData({ ...formData, [field.key]: formData[field.key] === 'true' ? 'false' : 'true' })}
                 className={`h-16 rounded-2xl px-6 flex items-center justify-between border cursor-pointer transition-all duration-300 ${formData[field.key] === 'true' ? 'bg-brand-success/5 border-brand-success/30' : 'bg-brand-danger/5 border-brand-danger/30'}`}
               >
-                <span className={`font-black uppercase tracking-widest text-[11px] transition-colors ${formData[field.key] === 'true' ? 'text-brand-success' : 'text-brand-danger'}`}>
-                  RFID ({formData[field.key] === 'true' ? 'Enabled' : 'Disabled'})
+                <span className={`font-black uppercase tracking-widest text-[11px] transition-colors ${(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'text-brand-success' : 'text-brand-danger'}`}>
+                  RFID ({(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'Enabled' : 'Disabled'})
                 </span>
                 
                 {/* Sliding Toggle UI */}
-                <div className={`w-14 h-7 rounded-full p-1 relative transition-colors duration-300 ${formData[field.key] === 'true' ? 'bg-brand-success' : 'bg-white/10'}`}>
+                <div className={`w-14 h-7 rounded-full p-1 relative transition-colors duration-300 ${(formData[field.key] === 'true' || formData[field.key] === undefined) ? 'bg-brand-success' : 'bg-white/10'}`}>
                   <motion.div 
-                    animate={{ x: formData[field.key] === 'true' ? 28 : 0 }}
+                    animate={{ x: (formData[field.key] === 'true' || formData[field.key] === undefined) ? 28 : 0 }}
                     transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                     className="w-5 h-5 bg-white rounded-full shadow-lg"
                   />

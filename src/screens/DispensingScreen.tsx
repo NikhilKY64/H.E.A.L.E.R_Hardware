@@ -143,7 +143,7 @@ export const DispensingScreen = () => {
     if (isCompleted && !dbError) {
       const timeout = setTimeout(() => {
         navigate(isFirstAid ? '/' : '/prescription');
-      }, 3000); // 3 seconds is perfect for reading the success message
+      }, 2000); // 2 seconds is perfect for reading the success message
       return () => clearTimeout(timeout);
     }
   }, [isCompleted, dbError, navigate, isFirstAid]);

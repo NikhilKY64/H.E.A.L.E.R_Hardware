@@ -81,14 +81,18 @@ void setup() {
   pRxCharacteristic->setCallbacks(new MyCallbacks());
   pService->start();
 
-  // --- Enhanced Advertising for high visibility ---
+  // --- Optimized Advertising for Handshake Stability ---
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
+  pAdvertising->setScanResponse(true); // Full identity for GATT handshake
   pAdvertising->setMinPreferred(0x06);  
   pAdvertising->setMinPreferred(0x12);
+  
   BLEDevice::startAdvertising();
   Serial.println("Bluetooth 'HEALER-ROBOT' is SHOUTING... Ready to connect!");
+
+  // Give BLE stack time to stabilize before Camera power-on
+  delay(2000); 
 
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -126,16 +130,21 @@ void setup() {
 }
 
 void loop() {
-  // Bridge Bluetooth data to Serial (Mega)
-  if (Serial.available()) {
-    String msg = Serial.readStringUntil('\n');
-    if (deviceConnected) {
-      pTxCharacteristic->setValue(msg.c_str());
-      pTxCharacteristic->notify();
+  // Bridge Bluetooth data to Serial (Mega) - Non-blocking character read
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+    static String msgBuffer = "";
+    if (c == '\n') {
+      if (deviceConnected) {
+        String fullMsg = msgBuffer + "\n";
+        pTxCharacteristic->setValue(fullMsg.c_str());
+        pTxCharacteristic->notify();
+      }
+      msgBuffer = "";
+    } else if (c != '\r') {
+      msgBuffer += c;
     }
   }
-
-  // Pin 12 Trigger removed to prevent noise-based spamming
 }
 
 void capturePhoto() {

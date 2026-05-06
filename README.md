@@ -73,14 +73,31 @@ npm run dev
 ```
 
 ### 4. Hardware Firmware Deployment
-1. **Arduino Mega:**
-   - Locate code in `/arduino/H.E.A.L.E.R_Mega.ino`.
-   - Install `Servo`, `SPI`, `MFRC522` libraries in Arduino IDE.
-   - Upload via USB.
-2. **ESP32-CAM:**
-   - Locate code in `/arduino/H.E.A.L.E.R_ESP32CAM.ino`.
-   - Setup FTDI programmer and select `AI Thinker ESP32-CAM`.
-   - Flash firmware.
+
+#### 🤖 Arduino Mega (Main Controller)
+Choose one of the following variants based on your hardware requirements:
+- **`arduino/H.E.A.L.E.R_Mega_Detach_.ino` (Recommended):** Features "Smart Detach" power management. Servos are only powered during movement, eliminating heat, vibration, and high idle power draw.
+- **`arduino/H.E.A.L.E.R_Mega_Attach_.ino`:** Features "Permanent Locking". Servos stay powered at all times, making it physically impossible to force the doors open manually (higher power consumption).
+
+**Setup:**
+- Install `Servo`, `SPI`, and `MFRC522` libraries in the Arduino IDE.
+- Upload your chosen variant via USB.
+
+#### 📡 ESP32-CAM (Bluetooth & Camera)
+- **`arduino/H.E.A.L.E.R_ESP32CAM.ino`:** This is the core communication bridge. It handles the Bluetooth link to the app and triggers the camera/flash.
+- **Setup:** Select `AI Thinker ESP32-CAM` in the Arduino IDE and flash via an FTDI programmer.
+
+---
+
+## ⚡ Firmware Variants Comparison
+
+| Feature | **Detach Mode** (Recommended) | **Attach Mode** (Security) |
+| :--- | :--- | :--- |
+| **Servo Heat** | Low (Stay cool) | High (Constant power) |
+| **Vibration** | Zero (Silent idle) | Low-Medium (Idle jitter) |
+| **Security** | Gravity-held | Electronically Locked |
+| **Power Draw** | Minimal | Constant (~2A-3A) |
+| **Best For** | Trade shows, long-term use | High-security environments |
 
 ---
 
@@ -109,7 +126,7 @@ npm run dev
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Developed with ❤️ by **[Madhur Mishra](https://github.com/Madhurmishrax)** & **[Nikhil Kumar Yadav](https://github.com/NikhilKY64)**.
+Developed with ❤️ by **[Madhur Mishra](https://github.com/Madhurmishrax)** & **[Nikhil Kumar](https://github.com/NikhilKY64)**.
 
 ---
 Developed with a focus on medical integrity and high-availability kiosk deployment.
