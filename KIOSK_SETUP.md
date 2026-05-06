@@ -2,7 +2,7 @@
 
 To run H.E.A.L.E.R in a production environment as a dedicated kiosk on an Android tablet, follow these steps to securely lock down the device:
 
-1. **In Android Settings → Security → Device Admin** 
+1. **In Android Settings → Security → Device Admin**  
    Enable the app (or your kiosk wrapper browser like Fully Kiosk Browser) as a device admin. This grants it permissions to prevent the user from exiting or changing system settings.
 
 2. **Screen Pinning** 
