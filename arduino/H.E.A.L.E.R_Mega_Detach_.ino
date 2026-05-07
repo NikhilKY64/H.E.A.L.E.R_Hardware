@@ -14,8 +14,12 @@
 #include <avr/wdt.h>
 
 // --- Configuration ---
-const int SERVO_OPEN_ANGLE = 90;
-const int SERVO_CLOSE_ANGLE = 0;
+// Individual Angles for each servo [1, 2, 3, 4, FA]
+// If a door moves the WRONG way, just swap the OPEN and CLOSE numbers for that door!
+// [Door 1, Door 2, Door 3, Door 4, First Aid]
+const int OPEN_ANGLES[]  = {40, 40, 155, 155, 40}; //
+const int CLOSE_ANGLES[] = {155, 155, 40, 40, 155};
+
 const int BAUD_RATE = 9600;
 unsigned long lastRFIDCheck = 0;
 const int RFID_INTERVAL = 100; // Check every 100ms
@@ -134,8 +138,8 @@ void processCommand(String cmd) {
   else if (cmd == "OPEN_ALL") {
     for (int i = 0; i < 5; i++) {
       servos[i].attach(SERVO_PINS[i]);
-      servos[i].write(SERVO_OPEN_ANGLE);
-      delay(500); // Wait for movement to finish
+      servos[i].write(OPEN_ANGLES[i]);
+      delay(500); 
       servos[i].detach();
     }
     sendResponse("ACK_OPEN_ALL");
@@ -143,8 +147,8 @@ void processCommand(String cmd) {
   else if (cmd == "CLOSE_ALL") {
     for (int i = 0; i < 5; i++) {
       servos[i].attach(SERVO_PINS[i]);
-      servos[i].write(SERVO_CLOSE_ANGLE);
-      delay(500); // Wait for movement to finish
+      servos[i].write(CLOSE_ANGLES[i]);
+      delay(500); 
       servos[i].detach();
     }
     sendResponse("ACK_CLOSE_ALL");
@@ -172,23 +176,18 @@ void sendResponse(String msg) {
  */
 void openServo(int index) {
   servos[index].attach(SERVO_PINS[index]); 
-  servos[index].write(SERVO_OPEN_ANGLE);
-  delay(400); // Fast open (Gravity helps)
+  servos[index].write(OPEN_ANGLES[index]);
+  delay(400); 
   servos[index].detach(); 
-  
   sendResponse("ACK_OPEN_" + String(index + 1));
   blinkLED(2, 200);
 }
 
-/**
- * Control logic for single servo close
- */
 void closeServo(int index) {
   servos[index].attach(SERVO_PINS[index]);
-  servos[index].write(SERVO_CLOSE_ANGLE);
-  delay(800); // Stronger close (Against gravity)
+  servos[index].write(CLOSE_ANGLES[index]);
+  delay(800); 
   servos[index].detach();
-
   sendResponse("ACK_CLOSE_" + String(index + 1));
   blinkLED(1, 200);
 }
@@ -198,10 +197,9 @@ void closeServo(int index) {
  */
 void openFAServo() {
   servos[4].attach(SERVO_PINS[4]);
-  servos[4].write(SERVO_OPEN_ANGLE);
-  delay(400); 
+  servos[4].write(OPEN_ANGLES[4]);
+  delay(400);
   servos[4].detach();
-
   sendResponse("ACK_OPEN_FA");
   blinkLED(2, 200); 
 }
@@ -211,10 +209,9 @@ void openFAServo() {
  */
 void closeFAServo() {
   servos[4].attach(SERVO_PINS[4]);
-  servos[4].write(SERVO_CLOSE_ANGLE);
+  servos[4].write(CLOSE_ANGLES[4]);
   delay(800);
   servos[4].detach();
-
   sendResponse("ACK_CLOSE_FA");
   blinkLED(1, 200);
 }
