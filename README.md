@@ -1,132 +1,138 @@
-# H.E.A.L.E.R (Health Empowerment & Automated Learning Environment Robot)
+# H.E.A.L.E.R - A.P.S 🏥🤖
+### **H**ealth **E**mpowerment & **A**utomated **L**ogistics **E**mergency **R**esponse
+#### **Advanced Prescription System for Schools & Remote Communities**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-43853D?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Hardware](https://img.shields.io/badge/Hardware-Arduino_%7C_ESP32-blue?style=for-the-badge&logo=arduino&logoColor=white)](https://www.arduino.cc/)
+---
 
-H.E.A.L.E.R is a production-grade, hardware-integrated intelligent medical kiosk designed for remote health assistance and automated medicine dispensing. It leverages a custom-built **Smart Diagnosis Engine**, **Web Serial API** for hardware control, and a full-stack **SQLite + Express** architecture.
+## 🌟 Vision & Overview
+**H.E.A.L.E.R - A.P.S** is a state-of-the-art, hardware-integrated medical kiosk designed specifically for the **Army Public School (APS)** ecosystem. It serves as a 24/7 automated first-responder station, providing clinical-grade symptom screening and immediate dispensing of basic medications.
+
+Our mission is to bridge the gap between symptom onset and medical intervention, ensuring that students and staff have access to safe, audited, and automated healthcare without delay.
+
+---
+
+## 🧠 The Diagnosis Engine: How It Works
+The core of H.E.A.L.E.R is a **Multi-Track Clinical Decision Support System (CDSS)**. Unlike simple chatbots, our engine follows strict medical branching logic modeled after standard triage protocols.
+
+### 🛡️ Safety-First Philosophy
+- **Red-Flag Prioritization:** Before any diagnosis is made, the system checks for "Life-Threatening Signals" (e.g., chest pain, respiratory distress, high fever >104°F). If detected, the system immediately halts and initiates an **Emergency Doctor Referral**.
+- **The 4-Track System:**
+  1. **Flu & Fever:** Differentiates between Common Flu, Seasonal Viral Fever, and serious infections.
+  2. **Headache:** Identifies triggers like stress, hunger, or potentially serious neurological indicators (Migraine vs. Tension).
+  3. **Gastric/Stomach:** Screens for acidity, food poisoning, and dehydration risks.
+  4. **Skin & Allergy:** Analyzes rashes, fungal infections, and bacterial signals (includes camera-assisted capture).
+
+### 📊 Accuracy & Reliability
+- **Vetted Logic:** The diagnosis logic has undergone a rigorous bug audit (May 2026) to ensure paths like *Viral Fever* and *Bacterial Skin Infections* are correctly identified.
+- **Medication Coverage:** The system handles standard treatments for:
+  - **Fever:** Dolo 650, Crocin 500/250, Calpol Drops.
+  - **Dehydration:** ORS Electral (age-specific mixing instructions).
+  - **Allergy:** Cetirizine (Tablet/Syrup), Avil, Calamine.
+  - **Infections:** T-Bact (Bacterial), Clotrimazole (Fungal).
+- **Age-Appropriate Dosage:** Integrated `dosageRules.ts` ensures that a 7-year-old child and a 40-year-old adult receive different, safe quantities of the same medication.
+- **Confidence Scoring:** Every diagnosis is accompanied by a confidence percentage (70%–95%) based on the specificity of the answers provided.
 
 ---
 
 ## 🚀 Key Features
 
-### 🧠 Smart Diagnosis Engine (v3.0 - Redesigned)
-- **4 Main tracks:** Focused on most common conditions in India:
-  - **Track A:** Flu / Fever / Viral
-  - **Track B:** Headache / Migraine
-  - **Track C:** Stomach / Gastroenteritis / Acidity
-  - **Track D:** Skin Infections / Fungal / Allergy
-- **Professional Guidelines:** Integrated dosage guidelines for Adults, Children (1-12 years), and Elderly (60+).
-- **Safety Overrides:** Mandatory red-flag checks for severe symptoms (e.g., meningitis signs, severe dehydration, respiratory distress).
+### 🔌 Hardware Integration (IoT)
+- **Web Serial Control:** Driverless communication between the web interface and **Arduino Mega**.
+- **Precision Dispensing:** High-torque servo motors manage 4+ independent medicine compartments with zero-jam logic.
+- **RFID & QR Security:** Secure login via student ID cards or QR codes to prevent unauthorized access.
+- **ESP32-CAM:** Visual confirmation of skin conditions and session recording for remote verification.
 
-### ⚙️ Hardware-Integrated Dispensing
-- **Real-time Web Serial Control:** Communicates directly with Arduino Mega from the browser without drivers.
-- **RFID-Based Secure Access:** Patients can log in using unique RFID tags or QR codes.
-- **ESP32-CAM Documentation:** Captures patient/symptom photos during diagnostic sessions for remote doctor review.
-- **Servo-Driven Logistics:** Precision medicine dispensing via multiple compartment silos.
+### 👥 User Experience
+- **Bi-lingual Support:** Complete localization in **English** and **Hindi**, making it accessible to all staff and students.
+- **Voice Feedback (Future Ready):** Designed for low-literacy accessibility.
+- **Digital Prescriptions:** Instant QR-code based prescriptions and automated email delivery to parents/guardians.
 
-### 👥 Patient Experience
-- **Bi-lingual Interface:** Full localization support for **English** and **Hindi**.
-- **Intuitive UI:** High-contrast, accessibility-focused design inspired by modern medical equipment using Tailwind CSS and Motion.
-- **Digital Prescriptions:** Instant QR-code based prescriptions sent via email (Nodemailer integration).
-
-### 🛡️ Admin & Analytics Dashboard
-- **Inventory Management:** Real-time tracking of medicine stock in specific compartments.
-- **Session Audit Logs:** Detailed history of patient sessions, diagnostic outcomes, and action results.
-- **Hardware Debugger:** Low-level serial console for testing motor movements and sensor data.
+### 🛠️ Admin & Maintenance
+- **Live Inventory Tracking:** Real-time monitoring of medicine stock levels with low-stock alerts.
+- **Hardware Debugger:** A built-in terminal to test sensors, calibrate motors, and view raw serial logs.
+- **Session History:** Comprehensive logs of all diagnoses for school medical records.
 
 ---
 
-## 🛠️ Technical Setup & Activation
+## 🏗️ Technology Stack
 
-### 1. Software Prerequisites
-- **Node.js:** v20 or higher recommended.
-- **Yarn/NPM:** For dependency management.
-- **Browser:** Latest version of **Google Chrome** or **Edge** (Required for Web Serial API support).
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | React 19, Vite, TypeScript |
+| **Styling** | Tailwind CSS 4.0, Framer Motion (Animations) |
+| **Database** | Dexie.js (IndexedDB for offline-first capability) |
+| **Hardware** | Arduino Mega (C++), Web Serial API |
+| **Mobile** | Capacitor (Android/iOS Bridge) |
+| **AI/ML** | Google Gemini (Experimental AI Analysis) |
+| **Icons & Charts** | Lucide-React, Recharts |
 
-### 2. Environment Configuration
-Create a `.env` file in the root directory to activate critical services:
-```env
-# Email Service (Nodemailer)
-GMAIL_USER=your_clinic_email@gmail.com
-GMAIL_APP_PASSWORD=xxxx_xxxx_xxxx_xxxx # Generate via Google Account > App Passwords
+---
 
-# API Keys
-GEMINI_API_KEY=your_api_key_here # For optional AI-powered analysis extensions
+## 📂 Project Architecture
 
-# Admin Access
-ADMIN_PASSWORD=admin123
+```text
+.
+├── arduino/               # Firmware: Motor control, RFID, & Camera logic
+├── src/
+│   ├── components/        # UI: HardwareModal, DiagnosisCards, InventoryStats
+│   ├── context/           # State: AppContext (Global State Management)
+│   ├── screens/           # Views: Landing, Diagnosis, Dispensing, Admin
+│   ├── services/          # Logic: dbService, emailService, settingsService
+│   ├── utils/             # Core: diagnosisEngine.ts, serialComm.ts, dosageRules.ts
+│   └── locales.json       # Translations: Hindi & English strings
+└── capacitor.config.ts    # Hybrid mobile app configuration
 ```
 
-### 3. Installation Steps
+---
+
+## ⚙️ Setup & Installation
+
+### 1️⃣ Software Setup
 ```bash
-# 1. Install dependencies
+# Clone the repository
+git clone https://github.com/MadhurMishraX/H.E.A.L.E.R-A.P.S.git
+
+# Install dependencies
 npm install
 
-# 2. Start the development environment
-npm run dev
+# Environment Configuration
+# Create a .env file and add your Google Gemini API Key and Email credentials
+cp .env.example .env
 
-# 3. Access the application
-# Open http://localhost:3000 in your browser
+# Run development server
+npm run dev
 ```
 
-### 4. Hardware Firmware Deployment
-
-#### 🤖 Arduino Mega (Main Controller)
-Choose one of the following variants based on your hardware requirements:
-- **`arduino/H.E.A.L.E.R_Mega_Detach_.ino` (Recommended):** Features "Smart Detach" power management. Servos are only powered during movement, eliminating heat, vibration, and high idle power draw.
-- **`arduino/H.E.A.L.E.R_Mega_Attach_.ino`:** Features "Permanent Locking". Servos stay powered at all times, making it physically impossible to force the doors open manually (higher power consumption).
-
-**Setup:**
-- Install `Servo`, `SPI`, and `MFRC522` libraries in the Arduino IDE.
-- Upload your chosen variant via USB.
-
-#### 📡 ESP32-CAM (Bluetooth & Camera)
-- **`arduino/H.E.A.L.E.R_ESP32CAM.ino`:** This is the core communication bridge. It handles the Bluetooth link to the app and triggers the camera/flash.
-- **Setup:** Select `AI Thinker ESP32-CAM` in the Arduino IDE and flash via an FTDI programmer.
+### 2️⃣ Hardware Setup
+1. Connect an **Arduino Mega** to your computer.
+2. Flash the firmware found in `arduino/H.E.A.L.E.R_Mega_Detach_.ino`.
+3. Open the web app and click the **Connect Hardware** button in the top right.
+4. Ensure your browser permissions allow **Serial Port** access.
 
 ---
 
-## ⚡ Firmware Variants Comparison
+## 👨‍💻 The Team
 
-| Feature | **Detach Mode** (Recommended) | **Attach Mode** (Security) |
-| :--- | :--- | :--- |
-| **Servo Heat** | Low (Stay cool) | High (Constant power) |
-| **Vibration** | Zero (Silent idle) | Low-Medium (Idle jitter) |
-| **Security** | Gravity-held | Electronically Locked |
-| **Power Draw** | Minimal | Constant (~2A-3A) |
-| **Best For** | Trade shows, long-term use | High-security environments |
+### 💻 Developers
+Developed with passion and clinical precision by:
+- **Madhur Mishra** ([@Madhurmishrax](https://github.com/Madhurmishrax)) — Core Logic & Software Architecture
+- **Nikhil Kumar Yadav** ([@NikhilKY64](https://github.com/NikhilKY64)) — Hardware Integration & Firmware
 
----
+### 🏗️ Structural Engineers & Creative Design
+Special thanks to our teammates who brought structural integrity and creative vision to this project:
+- **Shakshi Singh**
+- **Riya Yadav**
+- **Kashish Adhikari**
 
-## 🏗️ Hardware Architecture & Connection
-- **Tablet to Arduino:** Connect via USB-OTG. The browser will prompt for permission to access "Arduino Mega".
-- **Serial Protocol:** Uses `9600` baud rate with custom command packets (e.g., `DISPENSE:1`).
-- **Indicator Status:** 
-  - 🟢 **Online:** Active serial communication found.
-  - 🔴 **Offline:** Check OTG connection or browser permissions.
+> [!NOTE]
+> This project is a result of seamless collaboration between software logic and physical design. We extend equal respect to our developers for the code and our structural team for their immense contribution to the project's creativity and hardware architecture.
 
 ---
 
-## 📊 Feature Reference List
-| Component | Technology | Role |
-| :--- | :--- | :--- |
-| **Frontend** | React 19, Motion, Tailwind | User interface & animations |
-| **Backend** | Express, Node.js | API routing & Email service |
-| **Database** | SQLite3 | Local storage for patients, logs, and settings |
-| **Logic** | DiagnosisEngine v3 | Clinical decision support system |
-| **Control** | Web Serial API | Direct browser-to-hardware data bridge |
-| **Network** | Nodemailer | Automated prescription delivery |
+## 📄 License & Disclaimer
+This project is licensed under the **MIT License**.
+
+**Disclaimer:** *H.E.A.L.E.R is a preliminary screening tool and does not replace professional medical advice. Always consult with a qualified doctor for serious conditions.*
 
 ---
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Developed with ❤️ by **[Madhur Mishra](https://github.com/Madhurmishrax)** & **[Nikhil Kumar](https://github.com/NikhilKY64)**.
-
----
-Developed with a focus on medical integrity and high-availability kiosk deployment.
+Developed for **Army Public School** | 2026 🇮🇳

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { QUESTION_TREE, calculateDiagnosis, getNextQuestion } from '../utils/diagnosisEngine';
 import { getAgeGroup } from '../utils/ageUtils';
+import { getDosageInfo } from '../utils/dosageRules';
 import { createSession, createPrescription, getDiseaseMap } from '../services/dbService';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export const DiagnosisScreen = () => {
-  const { t, language, currentPatient, setCurrentSession } = useAppContext();
+  const { t, language, setLanguage, currentPatient, setCurrentSession } = useAppContext();
   const navigate = useNavigate();
 
   const [currentQuestionId, setCurrentQuestionId] = useState<string>('Q1');
@@ -130,49 +131,61 @@ export const DiagnosisScreen = () => {
   const finalizeDiagnosis = async (finalAnswers: any[]) => {
     setIsAnalyzing(true);
     
-    const results = calculateDiagnosis(finalAnswers);
-    const ageGroup = getAgeGroup(currentPatient.age);
+    let results: any;
+    let prescriptions: any[] = [];
+    let sessionPayload: any;
+
+    try {
+      results = calculateDiagnosis(finalAnswers);
+      const ageGroup = getAgeGroup(currentPatient.age);
+      const q1Ans = finalAnswers.find(a => a.question_id === 'Q1')?.selected_option;
+      const track = q1Ans === 0 ? 'A' : q1Ans === 1 ? 'B' : q1Ans === 2 ? 'C' : 'D';
+      prescriptions = getDosageInfo(track, results.diagnosis, ageGroup, finalAnswers);
+    } catch (err) {
+      console.error("Diagnosis calculation error", err);
+      results = { diagnosis: 'UNKNOWN', action: 'auto_referred', confidence: 0 };
+      prescriptions = [];
+    }
+
+    sessionPayload = {
+      patient_id: currentPatient.id!,
+      timestamp: new Date().toISOString(),
+      diagnosed_disease: results.diagnosis,
+      confidence_score: results.confidence || 100,
+      top_alternatives: "",
+      ai_used: aiResult ? 1 : 0,
+      ai_result: aiResult ? JSON.stringify(aiResult) : "",
+      action_taken: results.action
+    };
 
     setTimeout(async () => {
       try {
-        const diseaseMap = await getDiseaseMap(results.diagnosis);
-
-        const sessionPayload = {
-          patient_id: currentPatient.id!,
-          timestamp: new Date().toISOString(),
-          diagnosed_disease: results.diagnosis,
-          confidence_score: results.confidence,
-          top_alternatives: "",
-          ai_used: aiResult ? 1 : 0,
-          ai_result: aiResult ? JSON.stringify(aiResult) : "",
-          action_taken: results.action
-        };
-
         const sessionId = await createSession(sessionPayload);
 
-        // Always try to create a prescription entry if we have medicine info or just generic advice
-        const medicineName = diseaseMap?.medicine_name || "General Care / Consult Doctor";
-        const dosage = diseaseMap ? (ageGroup === 'child' ? diseaseMap.dosage_child : 
-                       ageGroup === 'adult' ? diseaseMap.dosage_adult : 
-                       diseaseMap.dosage_elderly) : "As recommended by physician";
-
-        await createPrescription({
-          session_id: sessionId,
-          medicine_name: medicineName,
-          dosage: dosage || "Consult pharmacist",
-          frequency: diseaseMap?.is_serious ? "URGENT" : "As instructed", 
-          duration: diseaseMap?.is_serious ? "Immediate" : "5 days",
-          compartment_number: diseaseMap?.compartment_number ?? null
-        });
+        // Create prescriptions for all recommended medicines
+        for (const p of prescriptions) {
+          await createPrescription({
+            session_id: sessionId,
+            medicine_name: p.medicine,
+            dosage: p.dosage,
+            frequency: p.frequency,
+            duration: p.duration,
+            instructions: p.instructions,
+            compartment_number: p.compartment ?? null
+          });
+        }
 
         setCurrentSession({ id: sessionId, ...sessionPayload });
         navigate('/prescription');
       } catch (err) {
          console.error("Failed to save diagnosis", err);
+         // Still navigate even on DB error — set a minimal session so PrescriptionScreen doesn't redirect
+         setCurrentSession({ id: -1, ...sessionPayload });
          navigate('/prescription'); 
       }
-    }, 3000); // give 3 seconds for analyzing animation
+    }, 3500); 
   };
+
 
   const startCamera = async () => {
     setShowCamera(true);
@@ -342,12 +355,23 @@ export const DiagnosisScreen = () => {
             className="glass-card w-full p-12 flex flex-col max-h-[85vh] overflow-y-auto scrollbar-thin scrollbar-thumb-brand-secondary"
             style={{ minHeight: '60%' }}
           >
-            <div className="flex items-start justify-between mb-8">
+             <div className="flex items-start justify-between mb-8">
                <div className="flex items-center gap-3 bg-[rgba(0,188,212,0.1)] px-4 py-2 rounded-full border border-brand-secondary/30 text-brand-secondary">
                   <span className="text-xs font-bold uppercase tracking-[1.5px]">
                     {t('diagnosis.question')} {sessionAnswers.length + 1}
                   </span>
                </div>
+               
+               {/* Inline Language Toggle */}
+               <motion.button
+                 whileTap={{ scale: 0.95 }}
+                 onClick={() => setLanguage(language === 'en' ? 'hi' : 'en')}
+                 className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2 rounded-full border border-white/10 transition-colors group"
+               >
+                 <span className={`text-xs font-bold ${language === 'en' ? 'text-brand-secondary' : 'text-text-muted group-hover:text-text-primary'}`}>A</span>
+                 <div className="w-px h-3 bg-white/20" />
+                 <span className={`text-sm font-bold ${language === 'hi' ? 'text-brand-secondary' : 'text-text-muted group-hover:text-text-primary'}`}>अ</span>
+               </motion.button>
             </div>
 
             <h2 className="text-4xl font-bold text-text-primary mb-6 leading-tight">
@@ -428,7 +452,7 @@ export const DiagnosisScreen = () => {
                  }`}
                >
                  <ArrowLeft size={20} />
-                 {t('common.back') || 'Back'}
+                 {t('adminLogin.back')}
                </motion.button>
 
                {(currentQuestion?.type === 'multiple_select' || currentQuestion?.type === 'multiple_choice') && (
@@ -441,7 +465,7 @@ export const DiagnosisScreen = () => {
                     selectedOptions.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
-                  {t('common.next') || 'Next'}
+                  {t('diagnosis.next')}
                   <ArrowRight size={20} />
                 </motion.button>
                )}

@@ -13,12 +13,14 @@ import {
   CheckCircle2,
   Package,
   Plus,
-  Loader2
+  Loader2,
+  X,
+  PhoneCall
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeDisplay } from '../utils/qrUtils';
-import { sendQRCodeEmail } from '../services/emailService';
-import { getPatientFullHistory } from '../services/dbService';
+import { sendQRCodeEmail, sendPrescriptionEmail } from '../services/emailService';
+import { getPatientFullHistory, getAllSettings } from '../services/dbService';
 import QRCode from 'qrcode';
 
 export const PatientDashboardScreen = () => {
@@ -26,6 +28,9 @@ export const PatientDashboardScreen = () => {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [doctorPhone, setDoctorPhone] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   useEffect(() => {
     if (!currentPatient) {
@@ -35,8 +40,12 @@ export const PatientDashboardScreen = () => {
 
     const fetchHistory = async () => {
       try {
-        const data = await getPatientFullHistory(currentPatient.id!);
-        setSessions(data.sessions || []);
+        const [historyData, settings] = await Promise.all([
+          getPatientFullHistory(currentPatient.id!),
+          getAllSettings()
+        ]);
+        setSessions(historyData.sessions || []);
+        setDoctorPhone(settings.doctor_phone || '+91 98765 43210');
       } catch (err) {
         console.error("Failed to fetch visit history", err);
       } finally {
@@ -60,6 +69,20 @@ export const PatientDashboardScreen = () => {
       alert(t('prescription.reportSent'));
     } catch (err) {
       alert(t('prescription.reportFailed'));
+    }
+  };
+
+  const handleSendLastReport = async () => {
+    if (!currentPatient || sessions.length === 0) return;
+    setIsSendingEmail(true);
+    try {
+      const lastSession = sessions[0];
+      await sendPrescriptionEmail(currentPatient, lastSession, lastSession.prescriptions);
+      alert(t('prescription.reportSent'));
+    } catch (err) {
+      alert(t('prescription.reportFailed'));
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
@@ -143,6 +166,27 @@ export const PatientDashboardScreen = () => {
                >
                  <MailIcon size={18} />
                  {t('dashboard.emailQR')}
+               </motion.button>
+               
+               {sessions.length > 0 && (
+                 <motion.button 
+                   whileTap={{ scale: 0.95 }}
+                   onClick={handleSendLastReport}
+                   disabled={isSendingEmail}
+                   className="w-full h-14 border border-brand-primary hover:bg-[rgba(33,150,243,0.1)] text-brand-primary rounded-full text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+                 >
+                   {isSendingEmail ? <Loader2 size={18} className="animate-spin" /> : <MailIcon size={18} />}
+                   {t('prescription.sendReport')}
+                 </motion.button>
+               )}
+               
+               <motion.button 
+                 whileTap={{ scale: 0.95 }}
+                 onClick={() => setShowContactModal(true)}
+                 className="w-full h-14 border border-brand-success hover:bg-[rgba(0,230,118,0.1)] text-brand-success rounded-full text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-3 transition-all"
+               >
+                 <PhoneCall size={18} />
+                 Contact Doctor
                </motion.button>
             </div>
             
@@ -260,6 +304,54 @@ export const PatientDashboardScreen = () => {
           )}
         </div>
       </div>
+
+      {/* Contact Doctor Modal */}
+      <AnimatePresence>
+        {showContactModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-md glass-card p-10 flex flex-col items-center text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-brand-success" />
+              
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="absolute top-6 right-6 text-text-muted hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+              
+              <div className="w-20 h-20 bg-brand-success/10 text-brand-success rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,230,118,0.2)]">
+                <PhoneCall size={40} />
+              </div>
+              
+              <h3 className="text-2xl font-bold text-white mb-2">Contact Your Doctor</h3>
+              <p className="text-text-secondary mb-8 leading-relaxed">
+                Click below to call or message your physician directly.
+              </p>
+              
+              <a 
+                href={`tel:${doctorPhone}`}
+                className="w-full h-16 bg-brand-success text-brand-navy rounded-2xl flex items-center justify-center gap-4 text-xl font-black transition-transform active:scale-95 shadow-[0_10px_20px_rgba(0,230,118,0.3)]"
+              >
+                <PhoneCall size={24} strokeWidth={3} />
+                {doctorPhone}
+              </a>
+              
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="mt-8 text-sm font-bold text-text-muted uppercase tracking-widest hover:text-white transition-colors"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </motion.div>
   );

@@ -17,12 +17,14 @@ import {
   Thermometer,
   Heart,
   Droplets,
-  Stethoscope,
-  ArrowDown,
   Lock,
-  Info
+  Info,
+  X,
+  PhoneCall,
+  Stethoscope,
+  ArrowDown
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { sendPrescriptionEmail, sendAutoReferralEmail } from '../services/emailService';
 import {
   getPrescriptionsBySession,
@@ -41,9 +43,12 @@ export const PrescriptionScreen = () => {
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [dispensedItems, setDispensedItems] = useState<Record<string, boolean>>({});
   const [inventory, setInventory] = useState<any[]>([]);
-  const [settings, setSettings] = useState<any>({});
   const [diseaseMap, setDiseaseMap] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [settings, setSettings] = useState<any>({});
 
   const fetchData = async () => {
     try {
@@ -123,20 +128,23 @@ export const PrescriptionScreen = () => {
   };
 
   const handleSendEmail = async () => {
+    setIsSendingEmail(true);
+    setEmailStatus('idle');
     try {
       await sendPrescriptionEmail(currentPatient, currentSession, prescriptions);
-      alert(t('prescription.reportSent'));
+      setEmailStatus('success');
+      setTimeout(() => setEmailStatus('idle'), 3000);
     } catch (err) {
-      alert(t('prescription.reportFailed'));
+      setEmailStatus('error');
+      setTimeout(() => setEmailStatus('idle'), 4000);
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
   const handleCallDoctor = () => {
-    const phone = settings.doctor_phone || '';
-    const whatsappUrl = `whatsapp://send?phone=${phone}`;
-    window.location.href = whatsappUrl;
-    
-    addAdminLog(`Patient ${currentPatient?.name} initiated doctor call, session ${currentSession?.id}`);
+    setShowContactModal(true);
+    addAdminLog(`Patient ${currentPatient?.name} viewed doctor contact info, session ${currentSession?.id}`);
   };
 
   const handleDone = () => {
@@ -168,7 +176,7 @@ export const PrescriptionScreen = () => {
   }
 
   const confidence = currentSession?.confidence_score || 0;
-  const isSerious = diseaseMap?.is_serious === 1 || currentSession?.action_taken === 'auto_referred';
+  const isSerious = diseaseMap?.is_serious === 1 || currentSession?.action_taken === 'auto_referred' || currentSession?.action_taken === 'urgent-refer' || currentSession?.action_taken === 'refer';
 
   let confidenceLabel = "Possible Condition — Please Consult a Doctor";
   let labelColorClass = "from-amber-500 to-amber-600";
@@ -283,12 +291,14 @@ export const PrescriptionScreen = () => {
               <div className="bg-[rgba(255,82,82,0.1)] p-6 rounded-2xl border-2 border-brand-danger flex flex-col gap-3 animate-pulse">
                 <div className="flex items-center gap-4">
                   <AlertCircle className="text-brand-danger shrink-0" size={32} />
-                  <h5 className="text-brand-danger font-black text-xl uppercase tracking-widest m-0">Urgent: Doctor Consultation Required</h5>
+                  <h5 className="text-brand-danger font-black text-xl uppercase tracking-widest m-0">
+                    {currentSession?.action_taken === 'urgent-refer' ? 'Emergency: Immediate Hospital Visit' : 'Urgent: Doctor Consultation Required'}
+                  </h5>
                 </div>
                 <p className="text-brand-danger font-bold text-sm leading-relaxed m-0 pl-12">
-                  {currentSession.action_taken === 'auto_referred' 
-                    ? t('prescription.autoReferralText').replace('{{name}}', settings.doctor_name || 'Doctor') 
-                    : "This condition requires immediate professional medical attention. Please consult a doctor immediately. Auto-referral has been initiated."}
+                  {currentSession.action_taken.includes('refer') 
+                    ? "This condition requires immediate professional medical attention. Please consult a doctor immediately. An alert has been logged."
+                    : t('prescription.autoReferralText').replace('{{name}}', settings.doctor_name || 'Doctor')}
                 </p>
                 <div className="flex items-center gap-2 pl-12 text-brand-danger/70 text-xs font-bold uppercase tracking-widest">
                   <Check size={14} /> Referral Confirmation Sent to {settings.doctor_email || 'Clinic'}
@@ -301,8 +311,8 @@ export const PrescriptionScreen = () => {
                 const invItem = inventory.find(inv => inv.compartment_number === p.compartment_number);
                 const outOfStock = invItem ? invItem.current_count <= 0 : true;
                 const isDispensable = p.compartment_number > 0 && diseaseMap?.is_dispensable === 1;
-                const isSerious = diseaseMap?.is_serious === 1 || currentSession?.action_taken === 'serious_referred';
                 const dispensed = p.is_dispensed === 1 || dispensedItems[p.medicine_name];
+                const isItemSerious = isSerious || p.medicine_name === 'Referral Needed';
 
                 return (
                   <motion.div 
@@ -312,7 +322,7 @@ export const PrescriptionScreen = () => {
                     transition={{ delay: i * 0.1 }}
                     className={`p-6 glass-card border-l-4 transition-all ${
                       dispensed ? 'border-l-brand-success opacity-80' : 
-                      isSerious ? 'border-l-brand-danger' : 
+                      isItemSerious ? 'border-l-brand-danger' : 
                       'border-l-brand-secondary'
                     }`}
                   >
@@ -338,6 +348,12 @@ export const PrescriptionScreen = () => {
                             {p.duration}
                           </div>
                         </div>
+
+                        {p.instructions && (
+                          <p className="text-[11px] text-text-muted mt-3 italic leading-relaxed">
+                            {p.instructions}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex flex-col items-end gap-3">
@@ -346,7 +362,7 @@ export const PrescriptionScreen = () => {
                             <CheckCircle2 size={14} strokeWidth={3} />
                             {t('prescription.dispensed')}
                           </div>
-                        ) : isSerious ? (
+                        ) : isItemSerious ? (
                           <div className="flex flex-col items-end gap-1">
                             <span className="text-brand-danger font-bold text-xs uppercase tracking-widest">{t('prescription.doctorReview')}</span>
                             <button disabled className="h-10 px-4 bg-white/5 border border-white/10 text-white/20 rounded-full font-bold text-[10px] uppercase tracking-widest cursor-not-allowed">
@@ -420,9 +436,10 @@ export const PrescriptionScreen = () => {
         <motion.button 
           whileTap={{ scale: 0.97 }}
           onClick={handleSendEmail}
-          className="flex-1 h-20 glass-card border border-brand-secondary/30 text-text-primary hover:bg-brand-secondary/10 hover:border-brand-secondary rounded-[20px] text-sm tracking-widest uppercase font-bold flex flex-col items-center justify-center gap-2 transition-all"
+          disabled={isSendingEmail}
+          className="flex-1 h-20 glass-card border border-brand-secondary/30 text-text-primary hover:bg-brand-secondary/10 hover:border-brand-secondary rounded-[20px] text-sm tracking-widest uppercase font-bold flex flex-col items-center justify-center gap-2 transition-all disabled:opacity-50"
         >
-          <Mail size={24} className="text-brand-secondary" />
+          {isSendingEmail ? <Activity className="animate-spin text-brand-secondary" size={24} /> : <Mail size={24} className="text-brand-secondary" />}
           {t('prescription.sendReport')}
         </motion.button>
         <motion.button 
@@ -430,7 +447,7 @@ export const PrescriptionScreen = () => {
           onClick={handleCallDoctor}
           className="flex-1 h-20 glass-card border border-brand-success/30 text-text-primary hover:bg-brand-success/10 hover:border-brand-success rounded-[20px] text-sm tracking-widest uppercase font-bold flex flex-col items-center justify-center gap-2 transition-all"
         >
-          <Phone size={24} className="text-brand-success" />
+          <PhoneCall size={24} className="text-brand-success" />
           {t('prescription.callDoctor')}
         </motion.button>
         <motion.button 
@@ -442,6 +459,97 @@ export const PrescriptionScreen = () => {
           {t('prescription.done')}
         </motion.button>
       </div>
+
+      {/* Contact Doctor Modal */}
+      <AnimatePresence>
+        {showContactModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-md glass-card p-10 flex flex-col items-center text-center relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-brand-success" />
+              
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="absolute top-6 right-6 text-text-muted hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+              
+              <div className="w-20 h-20 bg-brand-success/10 text-brand-success rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(0,230,118,0.2)]">
+                <PhoneCall size={40} />
+              </div>
+              
+              <h3 className="text-2xl font-bold text-white mb-2">Contact Your Doctor</h3>
+              <p className="text-text-secondary mb-8 leading-relaxed">
+                Click below to call or message your physician directly.
+              </p>
+              
+              <a 
+                href={`tel:${settings.doctor_phone || '+91 98765 43210'}`}
+                className="w-full h-16 bg-brand-success text-brand-navy rounded-2xl flex items-center justify-center gap-4 text-xl font-black transition-transform active:scale-95 shadow-[0_10px_20px_rgba(0,230,118,0.3)]"
+              >
+                <PhoneCall size={24} strokeWidth={3} />
+                {settings.doctor_phone || '+91 98765 43210'}
+              </a>
+              
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="mt-8 text-sm font-bold text-text-muted uppercase tracking-widest hover:text-white transition-colors"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Email Status Feedback Modal */}
+      <AnimatePresence>
+        {emailStatus !== 'idle' && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className={`glass-card p-10 flex flex-col items-center text-center max-w-sm border-t-4 ${
+                emailStatus === 'success' ? 'border-t-brand-success' : 'border-t-brand-danger'
+              }`}
+            >
+              <button 
+                onClick={() => setEmailStatus('idle')}
+                className="absolute top-4 right-4 text-text-muted hover:text-white"
+              >
+                <X size={20} />
+              </button>
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-6 ${
+                emailStatus === 'success' ? 'bg-brand-success/10 text-brand-success' : 'bg-brand-danger/10 text-brand-danger'
+              }`}>
+                {emailStatus === 'success' ? <CheckCircle2 size={48} /> : <AlertCircle size={48} />}
+              </div>
+              <h3 className="text-2xl font-black text-white mb-2">
+                {emailStatus === 'success' ? 'Report Sent!' : 'Dispatch Failed'}
+              </h3>
+              <p className="text-text-secondary font-medium">
+                {emailStatus === 'success' 
+                  ? 'Your diagnosis report has been successfully sent to your registered email.' 
+                  : 'We could not reach the email server. Please check your configuration.'}
+              </p>
+              <button 
+                onClick={() => setEmailStatus('idle')}
+                className="mt-8 px-8 py-2 bg-white/5 border border-white/10 rounded-full text-xs font-black uppercase tracking-widest hover:bg-white/10"
+              >
+                Dismiss
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </motion.div>
   );
